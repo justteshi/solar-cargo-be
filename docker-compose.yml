@@ -12,6 +12,7 @@ services:
       - .env
     depends_on:
       - db
+    restart: "no"
 
   db:
     image: postgres:14
