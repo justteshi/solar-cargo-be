@@ -5,7 +5,7 @@ services:
     build: ./backend
     command: python manage.py runserver 0.0.0.0:5000
     volumes:
-      - ./backend:/code
+      - ./backend:/backend
     ports:
       - "5000:5000"
     env_file:

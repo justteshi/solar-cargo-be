@@ -26,7 +26,11 @@ SECRET_KEY = 'django-insecure-cmbt(u8-6^2gl_^q81unp#l&4d9c0_c=+a@@i09uk1m5dxh!qg
 DEBUG = True
 
 ALLOWED_HOSTS = ['solarcargo.commitandpray.com', 'localhost']
+
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = [
+    'https://solarcargo.commitandpray.com',
+]
 
 # Application definition
 
