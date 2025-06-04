@@ -33,7 +33,7 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
-    path('', include('reports.urls')),  # <-- include your app urls here
+    path('home', include('reports.urls')),  # <-- include your app urls here
     path('admin/', admin.site.urls),
 
     # Swagger UI:
