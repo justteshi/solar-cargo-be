@@ -1,3 +1,4 @@
+![Screenshot](solar_cargo_logo.jpg)
 # solar-cargo-be
 ### 1. Create .env 
 ```
