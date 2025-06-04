@@ -4,6 +4,7 @@ from .models import DeliveryReport
 from .serializers import DeliveryReportSerializer
 from rest_framework_api_key.permissions import HasAPIKey
 from django.http import HttpResponse
+from django.views import View
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all()
