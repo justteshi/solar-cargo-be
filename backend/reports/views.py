@@ -3,7 +3,7 @@ from rest_framework import viewsets
 from .models import DeliveryReport
 from .serializers import DeliveryReportSerializer
 from rest_framework_api_key.permissions import HasAPIKey
-
+from django.http import HttpResponse
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all()
@@ -13,4 +13,4 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
 
 
 def homepage(request):
-    return render(request, 'home.html')
+    return HttpResponse("Hello, this is the homepage.")
