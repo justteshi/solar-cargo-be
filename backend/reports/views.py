@@ -11,5 +11,6 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
     permission_classes = [HasAPIKey]
 
 
-def homepage(request):
-    return HttpResponse("Hello, this is the homepage.")
+class HomePageView(View):
+    def get(self, request):
+        return HttpResponse("Hello, this is the homepage.")
