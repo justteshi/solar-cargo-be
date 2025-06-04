@@ -6,6 +6,6 @@ router = DefaultRouter()
 router.register(r'delivery-reports', DeliveryReportViewSet, basename='deliveryreport')
 
 urlpatterns = [
-    path('home', homepage, name='home'),  # Homepage at root of app
+    path('', homepage, name='home'),                      # Homepage at root of app
     path('api/', include(router.urls)),                   # API nested under /api/
 ]
