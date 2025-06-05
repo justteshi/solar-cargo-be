@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   web:
-    build: ./backend
+    build: .
     command: [ "sh", "-c", "python /wait-for-db.py && python manage.py runserver 0.0.0.0:5000" ]
     volumes:
       - .:/code
