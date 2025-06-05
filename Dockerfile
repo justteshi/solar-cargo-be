@@ -9,7 +9,7 @@ WORKDIR /code
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY . .
+COPY . ./code
 COPY ./wait-for-db.py /wait-for-db.py
 
 # (Optional) Ensure it's executable
