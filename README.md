@@ -22,3 +22,9 @@ python manage.py migrate
 ```
 python manage.py createsuperuser
 ```
+### 6. (Optional) Plate Recognizer API
+* 1. Create account at [Plate Regocnizer API](https://app.platerecognizer.com)
+* 2. Add the API key to the .env
+```
+PLATE_RECOGNIZER_API_KEY=YOUR_API_KEY_HERE
+```
