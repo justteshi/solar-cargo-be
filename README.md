@@ -18,7 +18,13 @@ docker exec -it container_name bash
 ```
 python manage.py migrate
 ```
-### 5. (Optional) Create upser user for DJango admin
+### 5. (Optional) Create superuser for Django admin
 ```
 python manage.py createsuperuser
+```
+### 6. (Optional) Plate Recognizer API
+* 1. Create account at [Plate Regocnizer API](https://app.platerecognizer.com)
+* 2. Add the API key to the .env
+```
+PLATE_RECOGNIZER_API_KEY=YOUR_API_KEY_HERE
 ```
