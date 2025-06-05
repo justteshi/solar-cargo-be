@@ -14,3 +14,5 @@ COPY ../wait-for-db.py /wait-for-db.py
 
 # (Optional) Ensure it's executable
 RUN chmod +x /wait-for-db.py
+
+EXPOSE 5000
