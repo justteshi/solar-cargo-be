@@ -18,7 +18,7 @@ docker exec -it container_name bash
 ```
 python manage.py migrate
 ```
-### 5. (Optional) Create upser user for DJango admin
+### 5. (Optional) Create superuser for Django admin
 ```
 python manage.py createsuperuser
 ```
