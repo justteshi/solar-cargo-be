@@ -42,15 +42,19 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'drf_yasg',
     'rest_framework_api_key',
-    'reports'
+    'drf_yasg',
+    'drf_spectacular',
+    'reports',
+    'authentication'
 ]
 
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework_api_key.permissions.HasAPIKey',
     ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
 }
 
 MIDDLEWARE = [

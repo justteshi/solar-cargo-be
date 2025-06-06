@@ -22,6 +22,7 @@ from drf_yasg import openapi
 from django.conf import settings
 from django.conf.urls.static import static
 
+
 schema_view = get_schema_view(
     openapi.Info(
         title="Solar Cargo API",
@@ -33,8 +34,9 @@ schema_view = get_schema_view(
 )
 
 urlpatterns = [
+    path("api/", include("authentication.urls")),
     path('admin/', admin.site.urls),
-    path('', include('reports.urls')),  # <-- include your app urls here
+    path('', include('reports.urls')),
 
     # Swagger UI:
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

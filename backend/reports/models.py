@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.db import models
 import os
 # from .utils import recognize_plate, PlateRecognitionError
@@ -20,8 +21,9 @@ class DeliveryReport(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    User = get_user_model()
     user = models.ForeignKey(
-        'auth.User',
+        User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True

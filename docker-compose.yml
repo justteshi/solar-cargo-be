@@ -30,6 +30,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    ports:
+      - "5433:5432"
 
 volumes:
   postgres_data:
