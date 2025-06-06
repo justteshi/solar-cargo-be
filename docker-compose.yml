@@ -5,8 +5,8 @@ services:
     build: .
     command: [ "sh", "-c", "python /wait-for-db.py && python backend/manage.py runserver 0.0.0.0:5000" ]
 #    FOR DEVELOPMENT
-    volumes:
-      - .:/code
+#    volumes:
+#      - .:/code
     ports:
       - "5000:5000"
     env_file:
