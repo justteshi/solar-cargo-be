@@ -54,7 +54,17 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework_api_key.permissions.HasAPIKey',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'authentication.authentication.APIKeyFallbackAuthentication',
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'authentication.throttles.APIKeyRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'apikey': '1/minute',
+        'anon': '2/minute',
+    },
 }
 
 MIDDLEWARE = [
@@ -108,6 +118,13 @@ DATABASES = {
         'PASSWORD': os.environ.get("POSTGRES_PASSWORD"),
         'HOST': 'db',
         'PORT': 5432,
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-solar-throttle",
     }
 }
 

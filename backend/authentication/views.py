@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import viewsets, status
 from rest_framework.permissions import AllowAny
@@ -6,17 +9,16 @@ from django.contrib.auth import authenticate
 from rest_framework.decorators import action, permission_classes
 
 from .models import UserAPIKey
+from .permissions import HasUserAPIKey
 from .serializers import LoginSerializer
 
 class AuthViewSet(viewsets.ViewSet):
-    permission_classes = [AllowAny]
-
     @swagger_auto_schema(
         request_body=LoginSerializer,
         responses={200: 'Returns API key if login is successful'},
         operation_description="Login with username and password to get API key"
     )
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], permission_classes=[AllowAny])
     def login(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -26,7 +28,30 @@ class AuthViewSet(viewsets.ViewSet):
             )
             if user:
                 UserAPIKey.objects.filter(user=user).delete()
-                api_key, key = UserAPIKey.objects.create_key(name=f"{user.username}-key", user=user)
+                api_key, key = UserAPIKey.objects.create_key(
+                    name=f"{user.username}-key",
+                    user=user,
+                    expiry_date=timezone.now() + timedelta(hours=1)
+                )
                 return Response({"api_key": key}, status=status.HTTP_200_OK)
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=["post"], permission_classes=[HasUserAPIKey])
+    def logout(self, request):
+        key = HasUserAPIKey().get_key(request)
+        if not key:
+            return Response({"detail": "No API key provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            prefix, secret = key.split(".", 1)
+            api_key = UserAPIKey.objects.get(prefix=prefix)
+        except (ValueError, UserAPIKey.DoesNotExist):
+            return Response({"detail": "Invalid API key."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not api_key.is_valid(key):
+            return Response({"detail": "Invalid API key."}, status=status.HTTP_403_FORBIDDEN)
+
+        api_key.revoked = True
+        api_key.save()
+        return Response({"detail": "API key revoked. Logout successful."}, status=status.HTTP_200_OK)
