@@ -1,5 +1,0 @@
-#    FOR DEVELOPMENT
-services:
-  web:
-    volumes:
-      - .:/code
