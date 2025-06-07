@@ -16,7 +16,7 @@ docker exec -it container_name bash
 ```
 ### 4. Run migrations
 ```
-python manage.py migrate
+python backend/manage.py migrate
 ```
 ### 5. (Optional) Create superuser for Django admin
 ```
