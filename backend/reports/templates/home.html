@@ -17,9 +17,15 @@
             background: #020024;
             padding-top:50px;
         }
+        .button-row {
+            margin: .5rem 0;
+        }
         .solar-btn {
+            display: block;
+            width: 150px;
+            text-align: center;
             padding: 1rem;
-            color: #020024;
+                color: #020024;
             text-decoration: none;
             font-weight: bold;
             background-color: #eec322;
@@ -31,14 +37,32 @@
                 box-shadow: inset 0 0 0 3px #eec322;;
             }
         }
+        .green-btn {
+            background-color: #94e503;
+            color: #020024;
+            &:hover {
+                background: transparent;
+                color: #94e503;
+                box-shadow: inset 0 0 0 3px #94e503;;
+            }
+        }
+        .blue-btn {
+            background-color: #0396e5;
+            color: #020024;
+            &:hover {
+                background: transparent;
+                color: #0396e5;
+                box-shadow: inset 0 0 0 3px #0396e5;;
+            }
+        }
     </style>
 </head>
 <body>
 
     <img src="{% static 'images/solar_cargo_logo_no_background.png' %}" alt="Logo" style="max-width: 300px; height: auto;">
-    <p>
-        <a class="solar-btn" href="{% url 'admin:index' %}">Go to Admin Panel !</a>
-    </p>
+    <p class="button-row"><a class="solar-btn" href="{% url 'admin:index' %}">Admin Panel</a></p>
+    <p class="button-row"><a class="solar-btn green-btn" href="{% url 'swagger-ui' %}">Swagger</a></p>
+    <p class="button-row"><a class="solar-btn blue-btn" href="{% url 'admin:index' %}">Api Docs</a></p>
 
 </body>
 </html>
