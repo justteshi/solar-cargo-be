@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_api_key',
-    'drf_yasg',
     'drf_spectacular',
     'reports',
     'authentication'
@@ -55,7 +54,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'authentication.authentication.APIKeyFallbackAuthentication',
+        'authentication.authentication.APIKeyAuthentication',
+        'rest_framework.authentication.SessionAuthentication',  # optional fallback
     ],
     'DEFAULT_THROTTLE_CLASSES': [
         'authentication.throttles.APIKeyRateThrottle',
@@ -63,13 +63,12 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'api_key_header': '100/minute',
-        'apikey': '100/minute',
+        #'apikey': '100/minute',
         'anon': '5/minute',
     },
 }
 
 MIDDLEWARE = [
-    'authentication.middleware.SoftThrottleMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -79,15 +78,26 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-SWAGGER_SETTINGS = {
-    'SECURITY_DEFINITIONS': {
-        'API Key': {
-            'type': 'apiKey',
-            'in': 'header',
-            'name': 'Authorization',  # You will pass "Api-Key <your-key>" here
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Solar Cargo API',
+    'DESCRIPTION': 'API with API Key Authentication',
+    'VERSION': '1.0.0',
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+    'SERVE_INCLUDE_SCHEMA': True,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [{'ApiKeyAuth': []}],
+    'COMPONENTS': {
+        'securitySchemes': {
+            'ApiKeyAuth': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'Authorization',
+                'description': 'Add "Api-Key <your-key>" to authorize.'
+            }
         }
-    }
+    },
 }
+
 
 ROOT_URLCONF = 'config.urls'
 
