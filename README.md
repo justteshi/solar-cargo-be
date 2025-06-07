@@ -16,11 +16,11 @@ docker exec -it container_name bash
 ```
 ### 4. Run migrations
 ```
-python manage.py migrate
+python backend/manage.py migrate
 ```
 ### 5. (Optional) Create superuser for Django admin
 ```
-python manage.py createsuperuser
+python backend/manage.py createsuperuser
 ```
 ### 6. (Optional) Plate Recognizer API
 * 1. Create account at [Plate Regocnizer API](https://app.platerecognizer.com)
