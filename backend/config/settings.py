@@ -52,12 +52,24 @@ INSTALLED_APPS = [
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework_api_key.permissions.HasAPIKey',
+        'rest_framework.permissions.AllowAny',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'authentication.authentication.APIKeyFallbackAuthentication',
+    ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'authentication.throttles.APIKeyRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'api_key_header': '100/minute',
+        'apikey': '100/minute',
+        'anon': '5/minute',
+    },
 }
 
 MIDDLEWARE = [
+    'authentication.middleware.SoftThrottleMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -108,6 +120,13 @@ DATABASES = {
         'PASSWORD': os.environ.get("POSTGRES_PASSWORD"),
         'HOST': 'db',
         'PORT': 5432,
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-solar-throttle",
     }
 }
 
