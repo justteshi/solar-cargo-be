@@ -22,7 +22,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_api_key',
-    'drf_yasg',
     'drf_spectacular',
     'reports',
     'authentication',
@@ -34,36 +33,41 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'authentication.authentication.APIKeyFallbackAuthentication',
-    ],
-    'DEFAULT_THROTTLE_CLASSES': [
-        'authentication.throttles.APIKeyRateThrottle',
-        'rest_framework.throttling.AnonRateThrottle',
+        'authentication.authentication.APIKeyAuthentication',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'api_key_header': '100/minute',
-        'apikey': '100/minute',
-        'anon': '5/minute',
+        'apikey': '2000/hour',
+        'anon': '200/hour',
     },
 }
 
-SWAGGER_SETTINGS = {
-    'SECURITY_DEFINITIONS': {
-        'API Key': {
-            'type': 'apiKey',
-            'in': 'header',
-            'name': 'Authorization',
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Solar Cargo API',
+    'DESCRIPTION': 'API with API Key Authentication',
+    'VERSION': '1.0.0',
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+    'SERVE_INCLUDE_SCHEMA': True,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SECURITY': [{'ApiKeyAuth': []}],
+    'COMPONENTS': {
+        'securitySchemes': {
+            'ApiKeyAuth': {
+                'type': 'apiKey',
+                'in': 'header',
+                'name': 'Authorization',
+                'description': 'Add "Api-Key <your-key>" to authorize.'
+            }
         }
-    }
+    },
 }
 
 MIDDLEWARE = [
-    'authentication.middleware.SoftThrottleMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'authentication.middleware.GlobalRateThrottleMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

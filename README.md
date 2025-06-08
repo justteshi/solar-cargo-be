@@ -30,3 +30,50 @@ python backend/manage.py createsuperuser
 ```
 PLATE_RECOGNIZER_API_KEY=YOUR_API_KEY_HERE
 ```
+
+# Login API
+
+```
+curl -X 'POST' \
+  'http://localhost:5000/api/auth/login/' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -H 'X-CSRFTOKEN: <token>' \
+  -d '{
+  "username": "admin",
+  "password": "admin"
+}'
+```
+ This is generating an Api-Key, which is required for every other request.
+ The way it is used is in a header:
+ ```
+    -H Authorization: ApiKet <generated API key>
+ ```
+
+# Pagination
+
+Your list endpoints use ReportsResultsSetPagination, which extends DRF’s PageNumberPagination. By default it returns 10 items per page (as configured in pagination.py):
+
+```
+class ReportsResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 100
+```
+
+Clients can customize the page size by supplying the page_size query parameter, for example:
+
+```angular2html
+GET /api/delivery-reports/?page=2&page_size=25
+```
+
+The response envelope will look like:
+```angular2html
+{
+  "count": 57,
+  "next": "https://.../api/delivery-reports/?page=3&page_size=25",
+  "previous": "https://.../api/delivery-reports/?page=1&page_size=25",
+  "results": [ /* 25 items */ ]
+}
+```
+

@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.utils import timezone
-from drf_yasg.utils import swagger_auto_schema
+from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import viewsets, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -13,12 +13,21 @@ from .permissions import HasUserAPIKey
 from .serializers import LoginSerializer
 
 class AuthViewSet(viewsets.ViewSet):
-    @swagger_auto_schema(
-        request_body=LoginSerializer,
-        responses={200: 'Returns API key if login is successful'},
-        operation_description="Login with username and password to get API key"
-    )
+    serializer_class = LoginSerializer
+
     @action(detail=False, methods=["post"], permission_classes=[AllowAny])
+    @extend_schema(
+        request=LoginSerializer,
+        responses={200: {
+            'type': 'object',
+            'properties': {
+                'api_key': {'type': 'string'}
+            }
+        }},
+        description="Login with username and password to get API key.",
+        auth=[],
+        tags=["Authentication"]
+    )
     def login(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
@@ -37,7 +46,14 @@ class AuthViewSet(viewsets.ViewSet):
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=["post"], permission_classes=[HasUserAPIKey])
+    @action(detail=False, methods=["post"], permission_classes=[HasUserAPIKey], url_path="logout")
+    @extend_schema(
+        request=None,
+        responses={200: {'type': 'object', 'properties': {'detail': {'type': 'string'}}}},
+        description="Revoke the user's API key.",
+        auth=["ApiKeyAuth"],
+        tags=["Authentication"]
+    )
     def logout(self, request):
         key = HasUserAPIKey().get_key(request)
         if not key:
