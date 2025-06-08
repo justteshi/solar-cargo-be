@@ -30,3 +30,22 @@ python backend/manage.py createsuperuser
 ```
 PLATE_RECOGNIZER_API_KEY=YOUR_API_KEY_HERE
 ```
+
+Login API
+
+```
+curl -X 'POST' \
+  'http://localhost:5000/api/auth/login/' \
+  -H 'accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -H 'X-CSRFTOKEN: <token>' \
+  -d '{
+  "username": "admin",
+  "password": "admin"
+}'
+```
+ This is generating an Api-Key, which is required for every other request.
+ The way it is used is in a header:
+ ```
+    -H Authorization: ApiKet <generated API key>
+ ```

@@ -1,22 +1,20 @@
 # authentication/middleware.py
 
 from django.http import JsonResponse
-from rest_framework.throttling import SimpleRateThrottle, AnonRateThrottle
-from .throttles import APIKeyRateThrottle
+from .throttles import APIKeyRateThrottle, AnonIPThrottle
 
 class GlobalRateThrottleMiddleware:
     """
     Rate-limiting преди permission check:
       - ако има Api-Key header ➔ throttle-ваш с APIKeyRateThrottle
-      - иначе ➔ throttle-ваш с AnonRateThrottle
+      - иначе ➔ throttle-ваш с AnonIPThrottle
     """
     def __init__(self, get_response):
         self.get_response = get_response
-        self.api_throttle  = APIKeyRateThrottle()
-        self.anon_throttle = AnonRateThrottle()
+        self.api_throttle = APIKeyRateThrottle()
+        self.anon_throttle = AnonIPThrottle()
 
     def __call__(self, request):
-        # само за DRF API пътища
         if request.path.startswith("/api/"):
             auth = request.headers.get("Authorization", "")
             if auth.startswith("Api-Key "):

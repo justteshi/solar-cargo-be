@@ -35,13 +35,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'authentication.authentication.APIKeyAuthentication',
     ],
-    'DEFAULT_THROTTLE_CLASSES': [
-        'authentication.throttles.APIKeyRateThrottle',
-        'authentication.throttles.AnonIPThrottle',
-    ],
     'DEFAULT_THROTTLE_RATES': {
-        'apikey': '100/minute',
-        'anon': '5/minute',
+        'apikey': '2000/hour',
+        'anon': '200/hour',
     },
 }
 
@@ -71,6 +67,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'authentication.middleware.GlobalRateThrottleMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
