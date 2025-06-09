@@ -1,73 +1,86 @@
-from datetime import timedelta
+# backend/authentication/views.py
 
-from django.utils import timezone
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema_view, extend_schema
 from rest_framework import viewsets, status
-from rest_framework.permissions import AllowAny
+from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
-from rest_framework.decorators import action, permission_classes
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
-from .models import UserAPIKey
-from .permissions import HasUserAPIKey
-from .serializers import LoginSerializer
+from .serializers import LoginSerializer, LogoutSerializer, LogoutResponseSerializer, AccessSerializer, \
+    TokenResponseSerializer
 
 class AuthViewSet(viewsets.ViewSet):
-    serializer_class = LoginSerializer
+    serializer_action_classes = {
+        'login':   LoginSerializer,
+        'refresh': TokenRefreshSerializer,
+        'logout':  LogoutSerializer,
+    }
 
-    @action(detail=False, methods=["post"], permission_classes=[AllowAny])
+    def get_serializer_class(self):
+        return self.serializer_action_classes.get(self.action)
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='login')
     @extend_schema(
         request=LoginSerializer,
-        responses={200: {
-            'type': 'object',
-            'properties': {
-                'api_key': {'type': 'string'}
-            }
-        }},
-        description="Login with username and password to get API key.",
-        auth=[],
-        tags=["Authentication"]
+        responses={200: TokenResponseSerializer},
+        tags=['Authentication']
     )
     def login(self, request):
         serializer = LoginSerializer(data=request.data)
-        if serializer.is_valid():
-            user = authenticate(
-                username=serializer.validated_data["username"],
-                password=serializer.validated_data["password"]
-            )
-            if user:
-                UserAPIKey.objects.filter(user=user).delete()
-                api_key, key = UserAPIKey.objects.create_key(
-                    name=f"{user.username}-key",
-                    user=user,
-                    expiry_date=timezone.now() + timedelta(hours=1)
-                )
-                return Response({"api_key": key}, status=status.HTTP_200_OK)
-            return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
 
-    @action(detail=False, methods=["post"], permission_classes=[HasUserAPIKey], url_path="logout")
+        user = authenticate(
+            username=serializer.validated_data['username'],
+            password=serializer.validated_data['password']
+        )
+        if not user:
+            return Response({'detail': 'Invalid credentials'},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        refresh = RefreshToken.for_user(user)
+        refresh['userName'] = user.username
+        refresh['userRole'] = getattr(user, 'role', None)
+        access = refresh.access_token
+
+        return Response({
+            'refresh': str(refresh),
+            'access':  str(access),
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='refresh')
     @extend_schema(
-        request=None,
-        responses={200: {'type': 'object', 'properties': {'detail': {'type': 'string'}}}},
-        description="Revoke the user's API key.",
-        auth=["ApiKeyAuth"],
-        tags=["Authentication"]
+        request=TokenRefreshSerializer,
+        responses={200: AccessSerializer},
+        tags=['Authentication']
+    )
+    def refresh(self, request):
+        serializer = TokenRefreshSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            {'access': serializer.validated_data['access']},
+            status=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='logout')
+    @extend_schema(
+        request=LogoutSerializer,
+        responses={200: LogoutResponseSerializer},
+        auth=['bearerAuth'], tags=['Authentication']
     )
     def logout(self, request):
-        key = HasUserAPIKey().get_key(request)
-        if not key:
-            return Response({"detail": "No API key provided."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = LogoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        token_str = serializer.validated_data['refresh']
         try:
-            prefix, secret = key.split(".", 1)
-            api_key = UserAPIKey.objects.get(prefix=prefix)
-        except (ValueError, UserAPIKey.DoesNotExist):
-            return Response({"detail": "Invalid API key."}, status=status.HTTP_403_FORBIDDEN)
+            token = RefreshToken(token_str)
+            token.blacklist()
+        except Exception:
+            return Response({'detail': 'Invalid or already blacklisted token'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        if not api_key.is_valid(key):
-            return Response({"detail": "Invalid API key."}, status=status.HTTP_403_FORBIDDEN)
-
-        api_key.revoked = True
-        api_key.save()
-        return Response({"detail": "API key revoked. Logout successful."}, status=status.HTTP_200_OK)
+        return Response({'detail': 'Logout successful. Refresh token blacklisted.'},
+                        status=status.HTTP_200_OK)

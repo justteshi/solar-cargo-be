@@ -1,10 +1,9 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+# backend/authentication/urls.py
+from django.urls import path
 from .views import AuthViewSet
 
-router = DefaultRouter()
-router.register(r"auth", AuthViewSet, basename="auth")
-
 urlpatterns = [
-    path("", include(router.urls)),
+    path('login',   AuthViewSet.as_view({'post': 'login'}),   name='auth-login'),
+    path('logout',  AuthViewSet.as_view({'post': 'logout'}),  name='auth-logout'),
+    path('refresh', AuthViewSet.as_view({'post': 'refresh'}), name='auth-refresh'),
 ]

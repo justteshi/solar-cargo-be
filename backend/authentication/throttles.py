@@ -2,17 +2,14 @@
 
 from rest_framework.throttling import SimpleRateThrottle
 
-class APIKeyRateThrottle(SimpleRateThrottle):
-    scope = 'apikey'
+class JWTUserThrottle(SimpleRateThrottle):
+    scope = 'jwt'
 
     def get_cache_key(self, request, view):
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Api-Key "):
-            raw_key = auth[len("Api-Key "):]
-            return self.cache_format % {
-                'scope': self.scope,
-                'ident': raw_key
-            }
+        user = getattr(request, 'user', None)
+        if user and user.is_authenticated:
+            # throttle-вай по user ID
+            return self.cache_format % {'scope': self.scope, 'ident': user.pk}
         return None
 
 
