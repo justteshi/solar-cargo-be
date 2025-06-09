@@ -1,12 +1,18 @@
-from rest_framework_api_key.permissions import BaseHasAPIKey
-from .models import UserAPIKey
+from rest_framework.permissions import BasePermission
 
-class HasUserAPIKey(BaseHasAPIKey):
-    model = UserAPIKey
+class IsAdmin(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if user.is_superuser:
+            return True
+        return hasattr(user, 'profile') and user.profile.role == 'admin'
 
-    def get_key(self, request):
-        auth = request.headers.get("Authorization", "")
-        prefix = "Api-Key "
-        if auth.startswith(prefix):
-            return auth[len(prefix):]
-        return None
+
+class IsBasicUser(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        return hasattr(user, 'profile') and user.profile.role == 'basic'

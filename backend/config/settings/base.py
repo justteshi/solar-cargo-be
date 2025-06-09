@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -21,7 +22,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework_api_key',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'drf_spectacular',
     'reports',
     'authentication',
@@ -33,32 +35,42 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'authentication.authentication.APIKeyAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'apikey': '2000/hour',
-        'anon': '200/hour',
+        'jwt': '7/minute',
+        'anon': '4/minute',
     },
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'BLACKLIST_AFTER_ROTATION': True,
+    'USER_ID_CLAIM': 'userID',
 }
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Solar Cargo API',
-    'DESCRIPTION': 'API with API Key Authentication',
+    'DESCRIPTION': 'API with JWT Authentication',
     'VERSION': '1.0.0',
     'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
     'SERVE_INCLUDE_SCHEMA': True,
     'COMPONENT_SPLIT_REQUEST': True,
-    'SECURITY': [{'ApiKeyAuth': []}],
+
     'COMPONENTS': {
         'securitySchemes': {
-            'ApiKeyAuth': {
-                'type': 'apiKey',
-                'in': 'header',
-                'name': 'Authorization',
-                'description': 'Add "Api-Key <your-key>" to authorize.'
-            }
-        }
+            'bearerAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            },
+        },
     },
+    'SECURITY': [
+        {'bearerAuth': []},
+    ],
 }
 
 MIDDLEWARE = [

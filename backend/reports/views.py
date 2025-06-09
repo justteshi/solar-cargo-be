@@ -2,16 +2,18 @@ from django.views.generic import TemplateView
 from rest_framework import viewsets
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema
+
+from authentication.permissions import IsAdmin
 from .models import DeliveryReport
 from .pagination import ReportsResultsSetPagination
 from .serializers import DeliveryReportSerializer
-from authentication.permissions import HasUserAPIKey
+from rest_framework.permissions import IsAuthenticated
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
-    queryset = DeliveryReport.objects.all()
+    queryset = DeliveryReport.objects.all().order_by('-created_at')
     serializer_class = DeliveryReportSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [HasUserAPIKey]
+    permission_classes = [IsAuthenticated, IsAdmin]
     pagination_class = ReportsResultsSetPagination
 
     @extend_schema(
