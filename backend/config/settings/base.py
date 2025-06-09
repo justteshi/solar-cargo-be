@@ -38,8 +38,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'jwt': '7/minute',
-        'anon': '4/minute',
+        'jwt': '2000/hour',
+        'anon': '200/hour',
     },
 }
 
