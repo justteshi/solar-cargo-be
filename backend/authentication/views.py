@@ -1,16 +1,20 @@
 # backend/authentication/views.py
 
-from drf_spectacular.utils import extend_schema_view, extend_schema
+from django.db.models import Q
+from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from django.contrib.auth import authenticate
+from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 from .serializers import LoginSerializer, LogoutSerializer, LogoutResponseSerializer, AccessSerializer, \
     TokenResponseSerializer
+
+
+User = get_user_model()
 
 class AuthViewSet(viewsets.ViewSet):
     serializer_action_classes = {
@@ -32,22 +36,25 @@ class AuthViewSet(viewsets.ViewSet):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = authenticate(
-            username=serializer.validated_data['username'],
-            password=serializer.validated_data['password']
-        )
-        if not user:
-            return Response({'detail': 'Invalid credentials'},
-                            status=status.HTTP_401_UNAUTHORIZED)
+        identifier = serializer.validated_data['username']
+        password = serializer.validated_data['password']
+
+        try:
+            user = User.objects.get(Q(username=identifier) | Q(email=identifier))
+        except User.DoesNotExist:
+            return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not user.check_password(password):
+            return Response({'detail': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
         refresh = RefreshToken.for_user(user)
         refresh['userName'] = user.username
-        refresh['userRole'] = getattr(user, 'role', None)
+        refresh['userRole'] = getattr(user.profile, 'role', None)
         access = refresh.access_token
 
         return Response({
             'refresh': str(refresh),
-            'access':  str(access),
+            'access': str(access),
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='refresh')
