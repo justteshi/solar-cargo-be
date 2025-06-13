@@ -7,6 +7,7 @@ from authentication.permissions import IsAdmin
 from .models import DeliveryReport
 from .pagination import ReportsResultsSetPagination
 from .serializers import DeliveryReportSerializer
+from .utils import save_report_to_excel
 from rest_framework.permissions import IsAuthenticated
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
@@ -35,7 +36,11 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
         }
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == 201:
+            report_data = response.data  # Serialized data
+            save_report_to_excel(report_data)
+        return response
 
     @extend_schema(
         tags=["Delivery Reports"],
