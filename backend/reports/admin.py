@@ -31,3 +31,9 @@ class DeliveryReportAdmin(admin.ModelAdmin):
     def deliveryreport_link(self, obj):
         url = reverse('admin:reports_deliveryreport_change', args=[obj.id])
         return format_html('<a href="{}">Delivery Report {}</a>', url, obj.id)
+
+@admin.register(Item)
+class ItemAdmin(admin.ModelAdmin):
+    list_display = ('name', 'quantity', 'delivery_report')
+    search_fields = ('name',)
+    list_filter = ('delivery_report',)
