@@ -37,5 +37,5 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items_input', [])
         report = DeliveryReport.objects.create(**validated_data)
         for item in items_data:
-            Item.objects.create(report=report, **item)
+            Item.objects.create(delivery_report=report, **item)
         return report
