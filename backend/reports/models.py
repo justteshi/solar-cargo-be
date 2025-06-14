@@ -30,7 +30,7 @@ class DeliveryReport(models.Model):
     )
 
     def __str__(self):
-        return f"Delivery Report {self.delivery_slip_number}"
+        return f"Delivery Report {self.id}"
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
