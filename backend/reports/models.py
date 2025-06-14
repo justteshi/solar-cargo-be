@@ -36,3 +36,15 @@ class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
     image = models.ImageField(upload_to='delivery_reports/additional_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+class Item(models.Model):
+    name = models.CharField(max_length=255)
+    quantity = models.PositiveIntegerField()
+    delivery_report = models.ForeignKey(
+        DeliveryReport,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+
+    def __str__(self):
+        return f"{self.name} x {self.quantity}"
