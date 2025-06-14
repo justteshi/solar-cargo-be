@@ -10,7 +10,6 @@ class ItemSerializer(serializers.ModelSerializer):
 class DeliveryReportSerializer(serializers.ModelSerializer):
     # Accept JSON string on POST
     items_input = serializers.CharField(write_only=True, required=False, help_text='JSON array of items to create.')
-
     # Show nested items in responses
     items = ItemSerializer(many=True, read_only=True)
 
