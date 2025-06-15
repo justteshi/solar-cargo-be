@@ -1,16 +1,26 @@
 from rest_framework import serializers
-from .models import DeliveryReport, Item
+from .models import DeliveryReport, Item, DeliveryReportItem
 import json
 
 class ItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Item
-        fields = ['name', 'quantity']
+        fields = ['id', 'name']
+
+
+class DeliveryReportItemSerializer(serializers.ModelSerializer):
+    item = ItemSerializer()
+
+    class Meta:
+        model = DeliveryReportItem
+        fields = ['item', 'quantity']
+
 
 class DeliveryReportSerializer(serializers.ModelSerializer):
     items_input = serializers.CharField(write_only=True, required=False, help_text='JSON array of items to create.')
-    items = ItemSerializer(many=True, read_only=True)
+    items = serializers.SerializerMethodField(read_only=True)
 
+    # other fields...
     load_secured_comment = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
     goods_according_comment = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
     packaging_comment = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
@@ -44,7 +54,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'trailer_license_plate_image',
             'weather_conditions',
             'comments',
-            'items',
+            'items',  # replaced with method field showing item + quantity
             # Стъпка 3:
             'load_secured_status',
             'load_secured_comment',
@@ -64,7 +74,10 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'user',
         ]
 
-    # includes image_1, image_2, created_at, etc.
+    def get_items(self, obj):
+        # This returns a list of items with quantity
+        report_items = DeliveryReportItem.objects.filter(delivery_report=obj)
+        return DeliveryReportItemSerializer(report_items, many=True).data
 
     def validate_items_input(self, value):
         try:
@@ -96,7 +109,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             if field in data and data[field] == '':
                 data[field] = None
 
-        # Правило: Трябва да има или табела на камион или снимка
         truck_plate = data.get('licence_plate_truck')
         truck_image = data.get('truck_license_plate_image')
         if not truck_plate and not truck_image:
@@ -104,7 +116,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 'licence_plate_truck': "Provide either the truck license plate number or the truck license plate image."
             })
 
-        # Правило: Трябва да има или табела на ремарке или снимка
         trailer_plate = data.get('licence_plate_trailer')
         trailer_image = data.get('trailer_license_plate_image')
         if not trailer_plate and not trailer_image:
@@ -112,7 +123,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 'licence_plate_trailer': "Provide either the trailer license plate number or the trailer license plate image."
             })
 
-        # Правило: Ако създаваме нов, items_input не трябва да липсва
         if self.context['request'].method == 'POST':
             if 'items_input' not in self.initial_data:
                 raise serializers.ValidationError({
@@ -124,6 +134,13 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         items_data = validated_data.pop('items_input', [])
         report = DeliveryReport.objects.create(**validated_data)
+
         for item in items_data:
-            Item.objects.create(delivery_report=report, **item)
+            item_obj, _ = Item.objects.get_or_create(name=item['name'])
+            DeliveryReportItem.objects.create(
+                delivery_report=report,
+                item=item_obj,
+                quantity=item['quantity']
+            )
+
         return report
