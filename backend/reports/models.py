@@ -3,6 +3,12 @@ from django.db import models
 import os
 # from .utils import recognize_plate, PlateRecognitionError
 
+class Item(models.Model):
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
+
 class DeliveryReport(models.Model):
     location = models.CharField(max_length=255)
     checking_company = models.CharField(max_length=255)
@@ -50,6 +56,8 @@ class DeliveryReport(models.Model):
     inspection_report_status = models.BooleanField(null=True, blank=True)
     inspection_report_comment = models.TextField(blank=True, null=True)
 
+    items = models.ManyToManyField(Item, through='DeliveryReportItem')
+
     User = get_user_model()
     user = models.ForeignKey(
         User,
@@ -66,14 +74,10 @@ class DeliveryReportImage(models.Model):
     image = models.ImageField(upload_to='delivery_reports/additional_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
-class Item(models.Model):
-    name = models.CharField(max_length=255)
+class DeliveryReportItem(models.Model):
+    delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE)
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
-    delivery_report = models.ForeignKey(
-        DeliveryReport,
-        on_delete=models.CASCADE,
-        related_name='items'
-    )
 
     def __str__(self):
-        return f"{self.name} x {self.quantity}"
+        return f"{self.item.name} x {self.quantity} for report {self.delivery_report.id}"
