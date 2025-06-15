@@ -2,6 +2,7 @@
 # solar-cargo-be
 ### 1. Create .env 
 ```
+DJANGO_ENV=dev
 DJANGO_SETTINGS_MODULE=config.settings.dev
 SECRET_KEY=dev-secret-key!421&&76b
 POSTGRES_DB=solarCargoDb
