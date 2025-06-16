@@ -1,9 +1,14 @@
-version: '3.9'
-
 services:
   web:
     build: .
-    command: [ "sh", "-c", "python /wait-for-db.py && python backend/manage.py runserver 0.0.0.0:5000" ]
+    command: >
+      sh -c "export PYTHONPATH=/code/backend &&
+             python /wait-for-db.py &&
+             if [ \"$DJANGO_ENV\" = 'prod' ]; then
+               gunicorn config.wsgi:application --bind 0.0.0.0:5000;
+             else
+               python backend/manage.py runserver 0.0.0.0:5000;
+             fi"
     ports:
       - "5000:5000"
     env_file:
