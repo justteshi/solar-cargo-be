@@ -4,6 +4,7 @@ from django.db.models import Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
@@ -65,7 +66,11 @@ class AuthViewSet(viewsets.ViewSet):
     )
     def refresh(self, request):
         serializer = TokenRefreshSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception:
+            raise AuthenticationFailed("Invalid or missing refresh token.")
+
         return Response(
             {'access': serializer.validated_data['access']},
             status=status.HTTP_200_OK
