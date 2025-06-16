@@ -11,6 +11,9 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment
 from PIL import Image as PILImage
+from copy import copy
+from openpyxl.utils import get_column_letter
+from openpyxl.styles.borders import Border, Side
 
 # Lock to ensure only one API call at a time
 _plate_recognizer_lock = threading.Lock()
@@ -57,8 +60,8 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
         'licence_plate_truck': 'C13',
         'licence_plate_trailer': 'C14',
         'weather_conditions': 'C15',
-        'comments': 'A28',
-        'user': 'D49',
+        'comments': 'A27',
+        'user': 'D46',
     }
     if default_storage.exists(file_path):
         with default_storage.open(file_path, 'rb') as f:
@@ -84,13 +87,13 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
 
     # Map each status field to its row number in Excel
     status_fields = {
-        'load_secured_status': 19,
-        'delivery_without_damages_status': 20,
-        'packaging_status': 21,
-        'goods_according_status': 22,
-        'suitable_machines_status': 23,
-        'delivery_slip_status': 24,
-        'inspection_report_status': 25,
+        'load_secured_status': 18,
+        'delivery_without_damages_status': 19,
+        'packaging_status': 20,
+        'goods_according_status': 21,
+        'suitable_machines_status': 22,
+        'delivery_slip_status': 23,
+        'inspection_report_status': 24,
     }
 
     comment_field_map = {
@@ -125,22 +128,24 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
             ws[comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
 
     start_row = 9
-    if "items" in data:
-        for idx, entry in enumerate(data["items"]):
-            row = start_row + idx
-            ws[get_top_left_cell(ws, f'E{row}')] = "Item"
-            ws[get_top_left_cell(ws, f'G{row}')] = entry["item"]["name"]
-            ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
-            ws[get_top_left_cell(ws, f'L{row}')] = entry["quantity"]
+    items = data.get("items", [])
+    # Write only the first 7 items
+    for idx, entry in enumerate(items[:7]):
+        row = start_row + idx
+        ws[get_top_left_cell(ws, f'E{row}')] = "Item"
+        ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
+        ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
+        ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
 
-
+    items = data.get("items", [])
+    extra_rows = max(0, len(items) - 7)
+    image_row = 29 + extra_rows
 
     image_map = {
-        'truck_license_plate_image': 'A32',
-        'trailer_license_plate_image': 'E32',
+        'truck_license_plate_image': f'A{image_row}',
+        'trailer_license_plate_image': f'E{image_row}',
     }
-    max_width, max_height = get_range_dimensions(ws, 'A32', 'L45')
-    # Add images
+    max_width, max_height = get_range_dimensions(ws, 'A29', 'L42')
     for img_key, cell in image_map.items():
         url = data.get(img_key)
         if url:
@@ -148,7 +153,7 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
             if response.status_code == 200:
                 img_bytes = io.BytesIO(response.content)
                 pil_img = PILImage.open(img_bytes)
-                pil_img.thumbnail((max_width, max_height), PILImage.LANCZOS)
+                pil_img.thumbnail((max_width, max_height))
                 output_img = io.BytesIO()
                 pil_img.save(output_img, format='PNG')
                 output_img.seek(0)
@@ -156,13 +161,91 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
                 img.anchor = cell
                 ws.add_image(img)
 
-    ws['D50'] = datetime.now().strftime("%Y-%m-%d")
+    ws['D47'] = datetime.now().strftime("%Y-%m-%d")
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     default_storage.save(file_path, ContentFile(output.read()))
 
+    # If more than 7 items, append the rest
+    if len(items) > 7:
+        append_extra_items_to_excel(file_path, items[7:], start_row + 7)
+
+def append_extra_items_to_excel(file_path, extra_items, insert_row):
+    with default_storage.open(file_path, 'rb') as f:
+        wb = load_workbook(f)
+        ws = wb.active
+
+        # Step 1: Store and unmerge affected merged cells
+        affected_merges = []
+        for rng in list(ws.merged_cells.ranges):
+            if rng.min_row >= insert_row:
+                affected_merges.append((rng.min_row, rng.min_col, rng.max_row, rng.max_col))
+                ws.unmerge_cells(str(rng))
+
+        # Step 2: Insert rows
+        ws.insert_rows(insert_row, amount=len(extra_items))
+
+        row_above = insert_row - 1
+        for i in range(len(extra_items)):
+            copy_row_style(ws, row_above, insert_row + i, min_col=1, max_col=12)
+
+        for i in range(len(extra_items)):
+            row = insert_row + i
+            # Merge A:B
+            ws.merge_cells(f"A{row}:B{row}")
+            for col in range(1, 3):
+                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
+            # Merge C:D
+            ws.merge_cells(f"C{row}:D{row}")
+            for col in range(3, 5):
+                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
+            # Merge F:H
+            ws.merge_cells(f"F{row}:H{row}")
+            for col in range(6, 9):
+                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
+            # Merge J:L
+            ws.merge_cells(f"J{row}:L{row}")
+            for col in range(10, 13):
+                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
+
+        for i in range(len(extra_items)):
+            cell = ws.cell(row=insert_row + i, column=12)
+            original = cell.border
+            cell.border = Border(
+                left=original.left,
+                right=Side(style="medium"),
+                top=original.top,
+                bottom=original.bottom,
+                diagonal=original.diagonal,
+                diagonal_direction=original.diagonal_direction,
+                outline=original.outline,
+                vertical=original.vertical,
+                horizontal=original.horizontal,
+            )
+
+        # Step 3: Re-merge cells in new positions
+        for min_row, min_col, max_row, max_col in affected_merges:
+            new_min_row = min_row + len(extra_items)
+            new_max_row = max_row + len(extra_items)
+            start_cell = f"{get_column_letter(min_col)}{new_min_row}"
+            end_cell = f"{get_column_letter(max_col)}{new_max_row}"
+            ws.merge_cells(f"{start_cell}:{end_cell}")
+
+        # Step 4: Write extra items
+        for idx, entry in enumerate(extra_items):
+            row = insert_row + idx
+            ws[get_top_left_cell(ws, f'E{row}')] = "Item"
+            ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
+            ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
+            ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        with default_storage.open(file_path, 'wb') as f:
+            f.write(output.read())
 
 def get_top_left_cell(ws, cell):
     for merged_range in ws.merged_cells.ranges:
@@ -186,5 +269,16 @@ def get_range_dimensions(ws, start_cell, end_cell):
     total_height = 0
     for row in range(start_row, end_row + 1):
         total_height += (ws.row_dimensions[row].height or 15) * 0.75
-
     return int(total_width), int(total_height)
+
+def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
+    for col in range(min_col, max_col + 1):
+        src_cell = ws.cell(row=src_row, column=col)
+        dest_cell = ws.cell(row=dest_row, column=col)
+        if src_cell.has_style:
+            dest_cell.font = copy(src_cell.font)
+            dest_cell.border = copy(src_cell.border)
+            dest_cell.fill = copy(src_cell.fill)
+            dest_cell.number_format = copy(src_cell.number_format)
+            dest_cell.protection = copy(src_cell.protection)
+            dest_cell.alignment = copy(src_cell.alignment)
