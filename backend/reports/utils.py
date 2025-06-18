@@ -14,6 +14,7 @@ from PIL import Image as PILImage
 from copy import copy
 from openpyxl.utils import get_column_letter
 from openpyxl.styles.borders import Border, Side
+from django.contrib.auth import get_user_model
 
 # Lock to ensure only one API call at a time
 _plate_recognizer_lock = threading.Lock()
@@ -162,6 +163,7 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
                 ws.add_image(img)
 
     ws['D47'] = datetime.now().strftime("%Y-%m-%d")
+    ws['D47'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
     output = io.BytesIO()
     wb.save(output)
@@ -282,3 +284,12 @@ def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
             dest_cell.number_format = copy(src_cell.number_format)
             dest_cell.protection = copy(src_cell.protection)
             dest_cell.alignment = copy(src_cell.alignment)
+
+def get_username_from_id(user_id):
+    User = get_user_model()
+    try:
+        user = User.objects.get(pk=user_id)
+        full_name = user.get_full_name()
+        return full_name if full_name.strip() else user.username
+    except User.DoesNotExist:
+        return "Unknown User"
