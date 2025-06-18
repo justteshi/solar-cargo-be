@@ -4,9 +4,11 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema
 
 from authentication.permissions import IsAdmin
+from datetime import datetime
 from .models import DeliveryReport
 from .pagination import ReportsResultsSetPagination
 from .serializers import DeliveryReportSerializer
+from .utils import save_report_to_excel, get_username_from_id
 from rest_framework.permissions import IsAuthenticated
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
@@ -35,7 +37,15 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
         }
     )
     def create(self, request, *args, **kwargs):
-        return super().create(request, *args, **kwargs)
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == 201:
+            report_data = response.data
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_path = f"delivery_reports/delivery_report_{timestamp}.xlsx"
+            user_id = report_data.get('user')
+            report_data['user'] = get_username_from_id(user_id)
+            save_report_to_excel(report_data, file_path=file_path)
+        return response
 
     @extend_schema(
         tags=["Delivery Reports"],
