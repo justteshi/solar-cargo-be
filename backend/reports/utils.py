@@ -5,15 +5,18 @@ import threading
 import time
 from datetime import datetime
 from copy import copy
+from pathlib import Path
+import logging
 
 import requests
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.styles.borders import Border, Side
 from PIL import Image as PILImage
 
@@ -30,7 +33,6 @@ CELL_MAP = {
     'licence_plate_truck': 'C13',
     'licence_plate_trailer': 'C14',
     'weather_conditions': 'C15',
-    'comments': 'A27',
     'user': 'D45',
 }
 STATUS_FIELDS = {
@@ -55,6 +57,7 @@ IMAGE_MAP_BASE_ROW = 29
 
 # Lock to ensure only one API call at a time
 _plate_recognizer_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 class PlateRecognitionError(Exception):
@@ -90,46 +93,24 @@ def recognize_plate(image_path):
 
 
 def save_report_to_excel(data, file_path=None, template_path='delivery_report_template.xlsx'):
-    import io
-    import os
-    from openpyxl import load_workbook
-    from django.core.files.base import ContentFile
-    from django.core.files.storage import default_storage
-    from django.conf import settings
-    from datetime import datetime
-    from .utils import (
-        CELL_MAP, STATUS_FIELDS, COMMENT_FIELD_MAP, ITEMS_PER_PAGE, TICK,
-        get_top_left_cell, write_items_to_excel, append_extra_items_to_excel,
-        IMAGE_MAP_BASE_ROW, get_range_dimensions
-    )
-    from openpyxl.styles import Alignment
-    from openpyxl.drawing.image import Image as XLImage
-    from PIL import Image as PILImage
-    import requests
-
-    # Build the correct relative path if not provided
-    if not file_path:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        relative_path = os.path.join("delivery_reports", f"delivery_report_{timestamp}.xlsx")
-    else:
-        relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT)
-    abs_path = os.path.join(settings.MEDIA_ROOT, relative_path)
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-
-    # Prepare workbook
+    """
+    Save delivery report data to an Excel file using a template.
+    Returns the absolute path for further processing (e.g., PDF conversion).
+    """
+    relative_path, abs_path = get_relative_and_abs_path(file_path)
+    items = data.get("items", [])
+    extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+    # Always load from template if file does not exist
     if default_storage.exists(relative_path):
         with default_storage.open(relative_path, 'rb') as f:
             wb = load_workbook(f)
-            ws = wb.active
-    elif os.path.exists(abs_path):
+    elif Path(abs_path).exists():
         with open(abs_path, 'rb') as f:
             wb = load_workbook(f)
-            ws = wb.active
     else:
         with open(template_path, 'rb') as f:
             wb = load_workbook(f)
-            ws = wb.active
-
+        ws = wb.active
         # Write regular fields
         for key, cell in CELL_MAP.items():
             if key in data:
@@ -149,25 +130,28 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
             cell = f'{col}{row}'
             target_cell = get_top_left_cell(ws, cell)
-            if (value is True and col == 'I') or (value is False and col == 'J') or (value is None and col == 'K'):
-                ws[target_cell] = TICK
-            else:
-                ws[target_cell] = ""
+            ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (
+                    value is None and col == 'K')) else ""
             ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
-        # Write comment
         comment_key = COMMENT_FIELD_MAP.get(field)
-        if comment_key:
-            comment = data.get(comment_key, "")
-            comment_cell = get_top_left_cell(ws, f'L{row}')
-            ws[comment_cell] = comment if comment else ""
-            ws[comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
+        if comment_key is not None and comment_key in data:
+            comment_cell = f"L{row}"
+            top_left_comment_cell = get_top_left_cell(ws, comment_cell)
+            ws[top_left_comment_cell] = data[comment_key]
+            ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
+            # Only resize the correct cell(s)
+            if extra_rows == 0:
+                autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=25)
+            else:
+                offset_row = row + extra_rows
+                offset_cell = f"L{offset_row}"
+                top_left_offset_cell = get_top_left_cell(ws, offset_cell)
+                autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=25)
 
-    # Write items
-    items = data.get("items", [])
+   # Write items (first page only)
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
 
-    # Images
-    extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+    # Images (before saving, so images are always present)
     image_row = IMAGE_MAP_BASE_ROW + extra_rows
     image_map = {
         'truck_license_plate_image': f'A{image_row}',
@@ -189,26 +173,49 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
                 img = XLImage(output_img)
                 img.anchor = cell
                 ws.add_image(img)
-            except Exception:
-                pass  # Optionally log error
+            except Exception as e:
+                logger.error(f"Error adding image for {img_key}: {e}")
 
     # Date
     ws['D46'] = datetime.now().strftime("%Y-%m-%d")
     ws['D46'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # Save to in-memory buffer
+    # Save to in-memory buffer and then to storage
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-
-    # Save only with default_storage
     default_storage.save(relative_path, ContentFile(output.read()))
 
     # Append extra items if needed
     if len(items) > ITEMS_PER_PAGE:
         append_extra_items_to_excel(relative_path, items[ITEMS_PER_PAGE:], 9 + ITEMS_PER_PAGE)
+        # Now reload and write comments at the correct row
+        with default_storage.open(relative_path, 'rb') as f:
+            wb = load_workbook(f)
+            ws = wb.active
+        extra_rows = len(items) - ITEMS_PER_PAGE
+    else:
+        # No extra items, comments row is 27
+        with default_storage.open(relative_path, 'rb') as f:
+            wb = load_workbook(f)
+            ws = wb.active
+        extra_rows = 0
 
-    # Return absolute path for PDF conversion
+    # Write comments at the correct row
+    comments_row = 27 + extra_rows
+    comments_cell = f"A{comments_row}"
+    if 'comments' in data:
+        ws[comments_cell] = data['comments']
+        ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
+        autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+
+    # Save again
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    with default_storage.open(relative_path, 'wb') as f:
+        f.write(output.read())
+
     return abs_path
 
 def write_items_to_excel(ws, items, start_row):
@@ -256,7 +263,7 @@ def append_extra_items_to_excel(file_path, extra_items, insert_row):
             original = cell.border
             cell.border = Border(
                 left=original.left,
-                right=Side(style="medium"),
+                right=Side(style="thick"),
                 top=original.top,
                 bottom=original.bottom,
                 diagonal=original.diagonal,
@@ -298,8 +305,6 @@ def get_range_dimensions(ws, start_cell, end_cell):
     """
     Calculate pixel width and height of a cell range.
     """
-    from openpyxl.utils import column_index_from_string
-
     start_col = ''.join(filter(str.isalpha, start_cell))
     start_row = int(''.join(filter(str.isdigit, start_cell)))
     end_col = ''.join(filter(str.isalpha, end_cell))
@@ -346,33 +351,64 @@ def get_username_from_id(user_id):
 
 
 def convert_excel_to_pdf(excel_path):
-    import os
-    # Define the PDF output directory
-    base_dir = os.path.dirname(excel_path)
-    pdf_dir = os.path.join(base_dir, "PDF files")
-    os.makedirs(pdf_dir, exist_ok=True)
+    """
+    Convert an Excel file to PDF using LibreOffice.
+    Returns the path to the generated PDF.
+    """
+    base_dir = Path(excel_path).parent
+    pdf_dir = base_dir / "PDF files"
+    pdf_dir.mkdir(exist_ok=True)
 
-    # Prepare the LibreOffice command
     command = [
         'libreoffice',
         '--headless',
         '--convert-to', 'pdf',
-        '--outdir', pdf_dir,
-        excel_path
+        '--outdir', str(pdf_dir),
+        str(excel_path)
     ]
-    print(f"[DEBUG] Running command: {' '.join(command)}")
-
-    # Run LibreOffice to convert the file
+    logger.debug(f"Running command: {' '.join(command)}")
     result = subprocess.run(command, capture_output=True)
-    print(f"[DEBUG] LibreOffice return code: {result.returncode}")
-    print(f"[DEBUG] LibreOffice stdout: {result.stdout.decode()}")
-    print(f"[DEBUG] LibreOffice stderr: {result.stderr.decode()}")
+    logger.debug(f"LibreOffice return code: {result.returncode}")
+    logger.debug(f"LibreOffice stdout: {result.stdout.decode()}")
+    logger.debug(f"LibreOffice stderr: {result.stderr.decode()}")
 
     if result.returncode != 0:
         raise RuntimeError(f"LibreOffice failed: {result.stderr.decode()}")
 
-    pdf_filename = os.path.splitext(os.path.basename(excel_path))[0] + '.pdf'
-    pdf_path = os.path.join(pdf_dir, pdf_filename)
-    print(f"[DEBUG] Expected PDF path: {pdf_path}")
-    print(f"[DEBUG] PDF file exists: {os.path.exists(pdf_path)}")
-    return pdf_path
+    pdf_filename = Path(excel_path).with_suffix('.pdf').name
+    pdf_path = pdf_dir / pdf_filename
+    logger.debug(f"Expected PDF path: {pdf_path}")
+    logger.debug(f"PDF file exists: {pdf_path.exists()}")
+    return str(pdf_path)
+
+def autofit_row_height(ws, cell, text, multiplier=14):
+    """
+    Set row height so all text is visible, minimizing excess whitespace.
+    """
+    col_letter = ''.join(filter(str.isalpha, cell))
+    row_num = int(''.join(filter(str.isdigit, cell)))
+    col_width = ws.column_dimensions[col_letter].width or 8.43
+    chars_per_line = int(col_width * 1.15)
+    text = (text or "").rstrip()
+    total_lines = 0
+    for line in text.split('\n'):
+        line = line.rstrip()
+        if not line:
+            total_lines += 1
+        else:
+            total_lines += (len(line) - 1) // chars_per_line + 1
+    ws.row_dimensions[row_num].height = max(15, total_lines * multiplier)
+
+def get_relative_and_abs_path(file_path=None, subdir="delivery_reports", ext="xlsx"):
+    """
+    Returns (relative_path, abs_path) for storage and local use.
+    """
+    if file_path:
+        abs_path = Path(file_path)
+        relative_path = abs_path.relative_to(settings.MEDIA_ROOT)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        relative_path = Path(subdir) / f"delivery_report_{timestamp}.{ext}"
+        abs_path = Path(settings.MEDIA_ROOT) / relative_path
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    return str(relative_path), str(abs_path)
