@@ -1,42 +1,81 @@
 import io
 import os
+import subprocess
 import threading
 import time
 from datetime import datetime
+from copy import copy
 
 import requests
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.contrib.auth import get_user_model
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment
-from PIL import Image as PILImage
-from copy import copy
 from openpyxl.utils import get_column_letter
 from openpyxl.styles.borders import Border, Side
-from django.contrib.auth import get_user_model
+from PIL import Image as PILImage
+
+# Constants
+ITEMS_PER_PAGE = 7
+TICK = "✓"
+CELL_MAP = {
+    'location': 'A3',
+    'checking_company': 'E3',
+    'supplier': 'C9',
+    'delivery_slip_number': 'C10',
+    'logistic_company': 'C11',
+    'container_number': 'C12',
+    'licence_plate_truck': 'C13',
+    'licence_plate_trailer': 'C14',
+    'weather_conditions': 'C15',
+    'comments': 'A27',
+    'user': 'D45',
+}
+STATUS_FIELDS = {
+    'load_secured_status': 18,
+    'delivery_without_damages_status': 19,
+    'packaging_status': 20,
+    'goods_according_status': 21,
+    'suitable_machines_status': 22,
+    'delivery_slip_status': 23,
+    'inspection_report_status': 24,
+}
+COMMENT_FIELD_MAP = {
+    'load_secured_status': 'load_secured_comment',
+    'delivery_without_damages_status': 'delivery_without_damages_comment',
+    'packaging_status': 'packaging_comment',
+    'goods_according_status': 'goods_according_comment',
+    'suitable_machines_status': 'suitable_machines_comment',
+    'delivery_slip_status': 'delivery_slip_comment',
+    'inspection_report_status': 'inspection_report_comment',
+}
+IMAGE_MAP_BASE_ROW = 29
 
 # Lock to ensure only one API call at a time
 _plate_recognizer_lock = threading.Lock()
 
+
 class PlateRecognitionError(Exception):
+    """Custom exception for plate recognition errors."""
     pass
 
+
 def recognize_plate(image_path):
+    """Recognize license plate from an image using Plate Recognizer API."""
     api_key = os.environ.get("PLATE_RECOGNIZER_API_KEY")
     if not api_key:
         raise RuntimeError("❌ Plate Recognizer API key is not set in environment variables.")
 
     with _plate_recognizer_lock:
-        time.sleep(1)  # Wait 1 second before making the API call
-
+        time.sleep(1)
         with open(image_path, 'rb') as img_file:
             response = requests.post(
                 'https://api.platerecognizer.com/v1/plate-reader/',
                 files={'upload': img_file},
                 headers={'Authorization': f'Token {api_key}'}
             )
-
         if response.status_code not in (200, 201):
             raise PlateRecognitionError(f"❌ API request failed: {response.status_code} - {response.text}")
 
@@ -50,22 +89,40 @@ def recognize_plate(image_path):
             raise PlateRecognitionError("❌ No license plate detected in the image.")
 
 
-def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='delivery_report_template.xlsx'):
-    cell_map = {
-        'location': 'A3',
-        'checking_company': 'E3',
-        'supplier': 'C9',
-        'delivery_slip_number': 'C10',
-        'logistic_company': 'C11',
-        'container_number': 'C12',
-        'licence_plate_truck': 'C13',
-        'licence_plate_trailer': 'C14',
-        'weather_conditions': 'C15',
-        'comments': 'A27',
-        'user': 'D46',
-    }
-    if default_storage.exists(file_path):
-        with default_storage.open(file_path, 'rb') as f:
+def save_report_to_excel(data, file_path=None, template_path='delivery_report_template.xlsx'):
+    import io
+    import os
+    from openpyxl import load_workbook
+    from django.core.files.base import ContentFile
+    from django.core.files.storage import default_storage
+    from django.conf import settings
+    from datetime import datetime
+    from .utils import (
+        CELL_MAP, STATUS_FIELDS, COMMENT_FIELD_MAP, ITEMS_PER_PAGE, TICK,
+        get_top_left_cell, write_items_to_excel, append_extra_items_to_excel,
+        IMAGE_MAP_BASE_ROW, get_range_dimensions
+    )
+    from openpyxl.styles import Alignment
+    from openpyxl.drawing.image import Image as XLImage
+    from PIL import Image as PILImage
+    import requests
+
+    # Build the correct relative path if not provided
+    if not file_path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        relative_path = os.path.join("delivery_reports", f"delivery_report_{timestamp}.xlsx")
+    else:
+        relative_path = os.path.relpath(file_path, settings.MEDIA_ROOT)
+    abs_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    # Prepare workbook
+    if default_storage.exists(relative_path):
+        with default_storage.open(relative_path, 'rb') as f:
+            wb = load_workbook(f)
+            ws = wb.active
+    elif os.path.exists(abs_path):
+        with open(abs_path, 'rb') as f:
             wb = load_workbook(f)
             ws = wb.active
     else:
@@ -73,8 +130,8 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
             wb = load_workbook(f)
             ws = wb.active
 
-        # Write regular fields (excluding status fields)
-        for key, cell in cell_map.items():
+        # Write regular fields
+        for key, cell in CELL_MAP.items():
             if key in data:
                 value = data[key]
                 if isinstance(value, bool):
@@ -86,62 +143,32 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
                 elif key == 'user':
                     ws[target_cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-    # Map each status field to its row number in Excel
-    status_fields = {
-        'load_secured_status': 18,
-        'delivery_without_damages_status': 19,
-        'packaging_status': 20,
-        'goods_according_status': 21,
-        'suitable_machines_status': 22,
-        'delivery_slip_status': 23,
-        'inspection_report_status': 24,
-    }
-
-    comment_field_map = {
-        'load_secured_status': 'load_secured_comment',
-        'delivery_without_damages_status': 'delivery_without_damages_comment',
-        'packaging_status': 'packaging_comment',
-        'goods_according_status': 'goods_according_comment',
-        'suitable_machines_status': 'suitable_machines_comment',
-        'delivery_slip_status': 'delivery_slip_comment',
-        'inspection_report_status': 'inspection_report_comment',
-    }
-
-    tick = "✓"
-        # Write status fields as ticks
-    for field, row in status_fields.items():
+    # Write status fields and comments
+    for field, row in STATUS_FIELDS.items():
         value = data.get(field, None)
         for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
             cell = f'{col}{row}'
             target_cell = get_top_left_cell(ws, cell)
             if (value is True and col == 'I') or (value is False and col == 'J') or (value is None and col == 'K'):
-                ws[target_cell] = tick
-                ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
+                ws[target_cell] = TICK
             else:
                 ws[target_cell] = ""
-                ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
-        # Write comment in column L for this status field
-        comment_key = comment_field_map.get(field)
+            ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
+        # Write comment
+        comment_key = COMMENT_FIELD_MAP.get(field)
         if comment_key:
             comment = data.get(comment_key, "")
             comment_cell = get_top_left_cell(ws, f'L{row}')
             ws[comment_cell] = comment if comment else ""
             ws[comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
 
-    start_row = 9
+    # Write items
     items = data.get("items", [])
-    # Write only the first 7 items
-    for idx, entry in enumerate(items[:7]):
-        row = start_row + idx
-        ws[get_top_left_cell(ws, f'E{row}')] = "Item"
-        ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
-        ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
-        ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
+    write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
 
-    items = data.get("items", [])
-    extra_rows = max(0, len(items) - 7)
-    image_row = 29 + extra_rows
-
+    # Images
+    extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+    image_row = IMAGE_MAP_BASE_ROW + extra_rows
     image_map = {
         'truck_license_plate_image': f'A{image_row}',
         'trailer_license_plate_image': f'E{image_row}',
@@ -150,8 +177,9 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
     for img_key, cell in image_map.items():
         url = data.get(img_key)
         if url:
-            response = requests.get(url)
-            if response.status_code == 200:
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
                 img_bytes = io.BytesIO(response.content)
                 pil_img = PILImage.open(img_bytes)
                 pil_img.thumbnail((max_width, max_height))
@@ -161,59 +189,70 @@ def save_report_to_excel(data, file_path='delivery_report.xlsx', template_path='
                 img = XLImage(output_img)
                 img.anchor = cell
                 ws.add_image(img)
+            except Exception:
+                pass  # Optionally log error
 
-    ws['D47'] = datetime.now().strftime("%Y-%m-%d")
-    ws['D47'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    # Date
+    ws['D46'] = datetime.now().strftime("%Y-%m-%d")
+    ws['D46'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
+    # Save to in-memory buffer
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
-    default_storage.save(file_path, ContentFile(output.read()))
 
-    # If more than 7 items, append the rest
-    if len(items) > 7:
-        append_extra_items_to_excel(file_path, items[7:], start_row + 7)
+    # Save only with default_storage
+    default_storage.save(relative_path, ContentFile(output.read()))
+
+    # Append extra items if needed
+    if len(items) > ITEMS_PER_PAGE:
+        append_extra_items_to_excel(relative_path, items[ITEMS_PER_PAGE:], 9 + ITEMS_PER_PAGE)
+
+    # Return absolute path for PDF conversion
+    return abs_path
+
+def write_items_to_excel(ws, items, start_row):
+    """
+    Write delivery items to the Excel worksheet starting at start_row.
+    """
+    for idx, entry in enumerate(items):
+        row = start_row + idx
+        ws[get_top_left_cell(ws, f'E{row}')] = "Item"
+        ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
+        ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
+        ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
+
 
 def append_extra_items_to_excel(file_path, extra_items, insert_row):
+    """
+    Append extra delivery items to an existing Excel file, preserving formatting.
+    """
     with default_storage.open(file_path, 'rb') as f:
         wb = load_workbook(f)
         ws = wb.active
 
-        # Step 1: Store and unmerge affected merged cells
+        # Store and unmerge affected merged cells
         affected_merges = []
         for rng in list(ws.merged_cells.ranges):
             if rng.min_row >= insert_row:
                 affected_merges.append((rng.min_row, rng.min_col, rng.max_row, rng.max_col))
                 ws.unmerge_cells(str(rng))
 
-        # Step 2: Insert rows
+        # Insert rows and copy style
         ws.insert_rows(insert_row, amount=len(extra_items))
-
         row_above = insert_row - 1
         for i in range(len(extra_items)):
             copy_row_style(ws, row_above, insert_row + i, min_col=1, max_col=12)
 
+        # Merge and align cells
         for i in range(len(extra_items)):
             row = insert_row + i
-            # Merge A:B
             ws.merge_cells(f"A{row}:B{row}")
-            for col in range(1, 3):
-                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
-            # Merge C:D
             ws.merge_cells(f"C{row}:D{row}")
-            for col in range(3, 5):
-                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
-            # Merge F:H
             ws.merge_cells(f"F{row}:H{row}")
-            for col in range(6, 9):
-                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
-            # Merge J:L
             ws.merge_cells(f"J{row}:L{row}")
-            for col in range(10, 13):
-                ws.cell(row=row, column=col).alignment = Alignment(horizontal="center", vertical="center")
-
-        for i in range(len(extra_items)):
-            cell = ws.cell(row=insert_row + i, column=12)
+            # Set right border for column L
+            cell = ws.cell(row=row, column=12)
             original = cell.border
             cell.border = Border(
                 left=original.left,
@@ -227,7 +266,7 @@ def append_extra_items_to_excel(file_path, extra_items, insert_row):
                 horizontal=original.horizontal,
             )
 
-        # Step 3: Re-merge cells in new positions
+        # Re-merge cells in new positions
         for min_row, min_col, max_row, max_col in affected_merges:
             new_min_row = min_row + len(extra_items)
             new_max_row = max_row + len(extra_items)
@@ -235,13 +274,8 @@ def append_extra_items_to_excel(file_path, extra_items, insert_row):
             end_cell = f"{get_column_letter(max_col)}{new_max_row}"
             ws.merge_cells(f"{start_cell}:{end_cell}")
 
-        # Step 4: Write extra items
-        for idx, entry in enumerate(extra_items):
-            row = insert_row + idx
-            ws[get_top_left_cell(ws, f'E{row}')] = "Item"
-            ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
-            ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
-            ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
+        # Write extra items
+        write_items_to_excel(ws, extra_items, insert_row)
 
         output = io.BytesIO()
         wb.save(output)
@@ -249,14 +283,22 @@ def append_extra_items_to_excel(file_path, extra_items, insert_row):
         with default_storage.open(file_path, 'wb') as f:
             f.write(output.read())
 
+
 def get_top_left_cell(ws, cell):
+    """
+    Return the top-left cell of a merged range if cell is merged, else itself.
+    """
     for merged_range in ws.merged_cells.ranges:
         if cell in merged_range:
             return merged_range.start_cell.coordinate
     return cell
 
+
 def get_range_dimensions(ws, start_cell, end_cell):
-    from openpyxl.utils import column_index_from_string, get_column_letter
+    """
+    Calculate pixel width and height of a cell range.
+    """
+    from openpyxl.utils import column_index_from_string
 
     start_col = ''.join(filter(str.isalpha, start_cell))
     start_row = int(''.join(filter(str.isdigit, start_cell)))
@@ -273,7 +315,11 @@ def get_range_dimensions(ws, start_cell, end_cell):
         total_height += (ws.row_dimensions[row].height or 15) * 0.75
     return int(total_width), int(total_height)
 
+
 def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
+    """
+    Copy cell styles from src_row to dest_row for specified columns.
+    """
     for col in range(min_col, max_col + 1):
         src_cell = ws.cell(row=src_row, column=col)
         dest_cell = ws.cell(row=dest_row, column=col)
@@ -285,7 +331,11 @@ def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
             dest_cell.protection = copy(src_cell.protection)
             dest_cell.alignment = copy(src_cell.alignment)
 
+
 def get_username_from_id(user_id):
+    """
+    Return the full name for a user ID, or username if full name is blank.
+    """
     User = get_user_model()
     try:
         user = User.objects.get(pk=user_id)
@@ -293,3 +343,36 @@ def get_username_from_id(user_id):
         return full_name if full_name.strip() else user.username
     except User.DoesNotExist:
         return "Unknown User"
+
+
+def convert_excel_to_pdf(excel_path):
+    import os
+    # Define the PDF output directory
+    base_dir = os.path.dirname(excel_path)
+    pdf_dir = os.path.join(base_dir, "PDF files")
+    os.makedirs(pdf_dir, exist_ok=True)
+
+    # Prepare the LibreOffice command
+    command = [
+        'libreoffice',
+        '--headless',
+        '--convert-to', 'pdf',
+        '--outdir', pdf_dir,
+        excel_path
+    ]
+    print(f"[DEBUG] Running command: {' '.join(command)}")
+
+    # Run LibreOffice to convert the file
+    result = subprocess.run(command, capture_output=True)
+    print(f"[DEBUG] LibreOffice return code: {result.returncode}")
+    print(f"[DEBUG] LibreOffice stdout: {result.stdout.decode()}")
+    print(f"[DEBUG] LibreOffice stderr: {result.stderr.decode()}")
+
+    if result.returncode != 0:
+        raise RuntimeError(f"LibreOffice failed: {result.stderr.decode()}")
+
+    pdf_filename = os.path.splitext(os.path.basename(excel_path))[0] + '.pdf'
+    pdf_path = os.path.join(pdf_dir, pdf_filename)
+    print(f"[DEBUG] Expected PDF path: {pdf_path}")
+    print(f"[DEBUG] PDF file exists: {os.path.exists(pdf_path)}")
+    return pdf_path
