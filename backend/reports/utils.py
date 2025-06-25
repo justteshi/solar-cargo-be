@@ -7,6 +7,7 @@ from datetime import datetime
 from copy import copy
 from pathlib import Path
 import logging
+import math
 
 import requests
 from django.core.files.base import ContentFile
@@ -151,30 +152,28 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
    # Write items (first page only)
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
 
-    # Images (before saving, so images are always present)
-    image_row = IMAGE_MAP_BASE_ROW + extra_rows
-    image_map = {
-        'truck_license_plate_image': f'A{image_row}',
-        'trailer_license_plate_image': f'E{image_row}',
-    }
-    max_width, max_height = get_range_dimensions(ws, 'A29', 'L42')
-    for img_key, cell in image_map.items():
-        url = data.get(img_key)
-        if url:
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-                img_bytes = io.BytesIO(response.content)
-                pil_img = PILImage.open(img_bytes)
-                pil_img.thumbnail((max_width, max_height))
-                output_img = io.BytesIO()
-                pil_img.save(output_img, format='PNG')
-                output_img.seek(0)
-                img = XLImage(output_img)
-                img.anchor = cell
-                ws.add_image(img)
-            except Exception as e:
-                logger.error(f"Error adding image for {img_key}: {e}")
+    # Calculate extra_rows before placing images
+    items = data.get("items", [])
+    extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+
+    # Dynamically adjust image section range
+    image_start_row = 29 + extra_rows
+    image_end_row = 42 + extra_rows
+    image_start_cell = f"A{image_start_row}"
+    image_end_cell = f"L{image_end_row}"
+
+    # Collect image URLs as before
+    image_urls = [
+        data.get('truck_license_plate_image'),
+        data.get('trailer_license_plate_image'),
+        data.get('proof_of_delivery_image'),
+    ]
+    image_urls += [img.get('image') for img in data.get('additional_images_urls', []) if img.get('image')]
+    image_urls = [url for url in image_urls if url]
+
+    # Place images in the dynamically calculated range
+    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell)
+    # --- End refactored image section ---
 
     # Date
     ws['D46'] = datetime.now().strftime("%Y-%m-%d")
@@ -208,6 +207,11 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws[comments_cell] = data['comments']
         ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
         autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+
+    cmr_url = data.get('cmr_image')
+    delivery_slip_url = data.get('delivery_slip_image')
+    if cmr_url or delivery_slip_url:
+        insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
 
     # Save again
     output = io.BytesIO()
@@ -412,3 +416,92 @@ def get_relative_and_abs_path(file_path=None, subdir="delivery_reports", ext="xl
         abs_path = Path(settings.MEDIA_ROOT) / relative_path
     abs_path.parent.mkdir(parents=True, exist_ok=True)
     return str(relative_path), str(abs_path)
+
+def create_collage_of_images(ws, image_urls, start_cell, end_cell):
+    n_images = len(image_urls)
+    if n_images == 0:
+        return
+
+    max_width, max_height = get_range_dimensions(ws, start_cell, end_cell)
+    area_aspect_ratio = max_width / max_height
+
+    # Find the best grid layout
+    best_layout = None
+    best_size = 0
+    for cols in range(1, n_images + 1):
+        rows = math.ceil(n_images / cols)
+        cell_width = max_width // cols
+        cell_height = max_height // rows
+        size = min(cell_width, cell_height)
+        grid_aspect_ratio = (cols * cell_width) / (rows * cell_height)
+        if size > best_size or (size == best_size and abs(grid_aspect_ratio - area_aspect_ratio) < abs((best_layout or (0,0,0))[2] - area_aspect_ratio)):
+            best_layout = (cols, rows, grid_aspect_ratio)
+            best_size = size
+
+    cols, rows, _ = best_layout
+    cell_width = max_width // cols
+    cell_height = max_height // rows
+
+    # Calculate actual used width and height
+    last_row_images = n_images % cols if n_images % cols != 0 else cols
+    used_width = cell_width * (cols if n_images > cols else n_images) if n_images > (rows - 1) * cols else cell_width * last_row_images
+    used_height = cell_height * (rows - 1) + (cell_height if last_row_images else 0)
+
+    collage = PILImage.new("RGBA", (cell_width * cols, cell_height * rows), (255, 255, 255, 0))
+
+    for idx, url in enumerate(image_urls):
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            img_bytes = io.BytesIO(response.content)
+            pil_img = PILImage.open(img_bytes)
+            pil_img.thumbnail((cell_width, cell_height), PILImage.LANCZOS)
+            x = (idx % cols) * cell_width + (cell_width - pil_img.width) // 2
+            y = (idx // cols) * cell_height + (cell_height - pil_img.height) // 2
+            collage.paste(pil_img, (x, y))
+        except Exception as e:
+            logger.error(f"Error adding image to collage: {e}")
+
+    # Crop to actual used area (removes trailing whitespace and prevents overflow)
+    collage = collage.crop((0, 0, used_width, used_height))
+
+    output_img = io.BytesIO()
+    collage.save(output_img, format='PNG')
+    output_img.seek(0)
+    img = XLImage(output_img)
+    img.anchor = start_cell
+    ws.add_image(img)
+
+def insert_cmr_delivery_slip_images(ws, cmr_url=None, delivery_slip_url=None):
+    """
+    Insert CMR and delivery slip images as full-size images, each on a new worksheet.
+    """
+    from openpyxl import Workbook
+
+    wb = ws.parent  # Get the workbook from the current worksheet
+    image_data = [
+        ("CMR", cmr_url),
+        ("Delivery Slip", delivery_slip_url)
+    ]
+
+    for sheet_name, url in image_data:
+        if not url:
+            continue
+        try:
+            # Create a new worksheet for each image
+            img_ws = wb.create_sheet(title=sheet_name)
+            response = requests.get(url)
+            response.raise_for_status()
+            img_bytes = io.BytesIO(response.content)
+            pil_img = PILImage.open(img_bytes)
+            output_img = io.BytesIO()
+            pil_img.save(output_img, format='PNG')
+            output_img.seek(0)
+            xl_img = XLImage(output_img)
+            xl_img.anchor = "A1"
+            img_ws.add_image(xl_img)
+            # Optionally, set row height/column width for better fit
+            img_ws.row_dimensions[1].height = pil_img.height * 0.75 / 1.33
+            img_ws.column_dimensions['A'].width = pil_img.width / 7
+        except Exception as e:
+            logger.error(f"Error inserting full-size image on new sheet: {e}")
