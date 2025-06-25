@@ -31,6 +31,23 @@ class DeliveryReport(models.Model):
         null=True,
         blank=True)
 
+    proof_of_delivery_image = models.ImageField(
+        upload_to='proof_of_delivery/',
+        null=True,
+        blank=True)
+
+    cmr_image = models.ImageField(
+        upload_to='cmr/',
+        null=True,
+        blank=True)
+
+    delivery_slip_image = models.ImageField(
+        upload_to='delivery_slip/',
+        null=True,
+        blank=True)
+
+
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

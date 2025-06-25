@@ -37,11 +37,11 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     delivery_slip_status = serializers.BooleanField(required=False, allow_null=True)
     inspection_report_status = serializers.BooleanField(required=False, allow_null=True)
 
+
     class Meta:
         model = DeliveryReport
         fields = [
-            'items_input',
-            # Основни данни:
+            # Step 1 report general info:
             'location',
             'checking_company',
             'supplier',
@@ -53,9 +53,12 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'truck_license_plate_image',
             'trailer_license_plate_image',
             'weather_conditions',
-            'comments',
+            'comments', # Bozhidar: this seems unnecessary, remove it
+            # Step 2 report items:
+            'items_input',
             'items',  # replaced with method field showing item + quantity
-            # Стъпка 3:
+            'proof_of_delivery_image',
+            # Step 3 checkboxes:
             'load_secured_status',
             'load_secured_comment',
             'goods_according_status',
@@ -70,7 +73,9 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'delivery_slip_comment',
             'inspection_report_status',
             'inspection_report_comment',
-
+            # Step 4 images:
+            'cmr_image',
+            'delivery_slip_image',
             'user',
         ]
 
@@ -121,6 +126,23 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         if not trailer_plate and not trailer_image:
             raise serializers.ValidationError({
                 'licence_plate_trailer': "Provide either the trailer license plate number or the trailer license plate image."
+            })
+        proof_of_delivery = data.get('proof_of_delivery_image')
+        if not proof_of_delivery:
+            raise serializers.ValidationError({
+                'proof_of_delivery': "Provide proof of delivery image."
+            })
+
+        cmr_image = data.get('cmr_image')
+        if not cmr_image:
+            raise serializers.ValidationError({
+                'proof_of_delivery': "Provide cmr image."
+            })
+
+        delivery_slip_image = data.get('delivery_slip_image')
+        if not cmr_image:
+            raise serializers.ValidationError({
+                'proof_of_delivery': "Provide delivery slip image."
             })
 
         if self.context['request'].method == 'POST':
