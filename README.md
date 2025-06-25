@@ -13,19 +13,12 @@ POSTGRES_PASSWORD=solarCargoSuperSecretDbPassword
 ```
 docker compose up --build
 ```
-### 3. Jump into web container
+### 3. (Optional) Create superuser for Django admin
 ```
 docker exec -it container_name bash
-```
-### 4. Run migrations
-```
-python backend/manage.py migrate
-```
-### 5. (Optional) Create superuser for Django admin
-```
 python backend/manage.py createsuperuser
 ```
-### 6. (Optional) Plate Recognizer API
+### 4. (Optional) Plate Recognizer API
 * 1. Create account at [Plate Regocnizer API](https://app.platerecognizer.com)
 * 2. Add the API key to the .env
 ```
