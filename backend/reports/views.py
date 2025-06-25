@@ -17,6 +17,7 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
     parser_classes = (MultiPartParser, FormParser)
     permission_classes = [IsAuthenticated, IsAdmin]
     pagination_class = ReportsResultsSetPagination
+    http_method_names = ['get', 'post', 'put', 'patch']
 
     @extend_schema(
         tags=["Delivery Reports"],
