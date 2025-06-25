@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from .models import DeliveryReport, Item, DeliveryReportItem
+from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage
 import json
 
+# Delivery Report Item
 class ItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = Item
@@ -15,10 +16,31 @@ class DeliveryReportItemSerializer(serializers.ModelSerializer):
         model = DeliveryReportItem
         fields = ['item', 'quantity']
 
+# End Delivery Report Item serializer
+
+
+# Delivery Report Images Serializer
+class DeliveryReportImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryReportImage
+        fields = ['image', 'uploaded_at']
+# End Delivery Report Images Serializer
+
+
 
 class DeliveryReportSerializer(serializers.ModelSerializer):
     items_input = serializers.CharField(write_only=True, required=False, help_text='JSON array of items to create.')
     items = serializers.SerializerMethodField(read_only=True)
+
+    additional_images_input = serializers.ListField(
+    child=serializers.ImageField(),
+    required=False,
+    allow_null=True,
+    allow_empty=True,
+    write_only=True,
+    help_text='List of additional image files.'
+)
+    additional_images_urls = DeliveryReportImageSerializer(source='additional_images', many=True, read_only=True)
 
     # other fields...
     load_secured_comment = serializers.CharField(required=False, allow_blank=True, allow_null=True, default=None)
@@ -37,11 +59,11 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     delivery_slip_status = serializers.BooleanField(required=False, allow_null=True)
     inspection_report_status = serializers.BooleanField(required=False, allow_null=True)
 
+
     class Meta:
         model = DeliveryReport
         fields = [
-            'items_input',
-            # Основни данни:
+            # Step 1 report general info:
             'location',
             'checking_company',
             'supplier',
@@ -53,9 +75,12 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'truck_license_plate_image',
             'trailer_license_plate_image',
             'weather_conditions',
-            'comments',
+            'comments', # Bozhidar: this seems unnecessary, remove it
+            # Step 2 report items:
+            'items_input',
             'items',  # replaced with method field showing item + quantity
-            # Стъпка 3:
+            'proof_of_delivery_image',
+            # Step 3 checkboxes:
             'load_secured_status',
             'load_secured_comment',
             'goods_according_status',
@@ -70,7 +95,11 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'delivery_slip_comment',
             'inspection_report_status',
             'inspection_report_comment',
-
+            # Step 4 images:
+            'cmr_image',
+            'delivery_slip_image',
+            'additional_images_input',
+            'additional_images_urls',
             'user',
         ]
 
@@ -122,6 +151,23 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'licence_plate_trailer': "Provide either the trailer license plate number or the trailer license plate image."
             })
+        proof_of_delivery = data.get('proof_of_delivery_image')
+        if not proof_of_delivery:
+            raise serializers.ValidationError({
+                'proof_of_delivery': "Provide proof of delivery image."
+            })
+
+        cmr_image = data.get('cmr_image')
+        if not cmr_image:
+            raise serializers.ValidationError({
+                'cmr_image': "Provide cmr image."
+            })
+
+        delivery_slip_image = data.get('delivery_slip_image')
+        if not delivery_slip_image:
+            raise serializers.ValidationError({
+                'delivery_slip_image': "Provide delivery slip image."
+            })
 
         if self.context['request'].method == 'POST':
             if 'items_input' not in self.initial_data:
@@ -132,15 +178,28 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
+        # Pop items input JSON (list of dicts)
         items_data = validated_data.pop('items_input', [])
+        # Pop additional images files list
+        additional_images_files = validated_data.pop('additional_images_input', [])
+
+        # Create DeliveryReport without extra fields
         report = DeliveryReport.objects.create(**validated_data)
 
+        # Create related items
         for item in items_data:
             item_obj, _ = Item.objects.get_or_create(name=item['name'])
             DeliveryReportItem.objects.create(
                 delivery_report=report,
                 item=item_obj,
                 quantity=item['quantity']
+            )
+
+        # Create DeliveryReportImage instances for additional images
+        for uploaded_file in additional_images_files:
+            DeliveryReportImage.objects.create(
+                delivery_report=report,
+                image=uploaded_file
             )
 
         return report
