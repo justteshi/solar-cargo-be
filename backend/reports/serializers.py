@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage
+from drf_spectacular.utils import extend_schema_field
 import json
 
 # Delivery Report Item
@@ -27,9 +28,13 @@ class DeliveryReportImageSerializer(serializers.ModelSerializer):
 # End Delivery Report Images Serializer
 
 
-
 class DeliveryReportSerializer(serializers.ModelSerializer):
-    items_input = serializers.CharField(write_only=True, required=False, help_text='JSON array of items to create.')
+    items_input = serializers.CharField(
+        write_only=True,
+        required=False,
+        help_text='JSON array of items to create.',
+        default='[]',  # 👈 Swagger default input
+    )
     items = serializers.SerializerMethodField(read_only=True)
 
     additional_images_input = serializers.ListField(
