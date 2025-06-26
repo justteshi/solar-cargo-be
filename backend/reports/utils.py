@@ -8,7 +8,8 @@ from copy import copy
 from pathlib import Path
 import logging
 import math
-
+import tempfile
+from pathlib import Path
 import requests
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -98,7 +99,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     Save delivery report data to an Excel file using a template.
     Returns the absolute path for further processing (e.g., PDF conversion).
     """
-    relative_path, abs_path = get_relative_and_abs_path(file_path)
+    relative_path, abs_path = get_relative_and_abs_path(file_path, subdir="delivery_reports_excel", ext="xlsx")
     items = data.get("items", [])
     extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
     # Always load from template if file does not exist
@@ -142,12 +143,12 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
             ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
             # Only resize the correct cell(s)
             if extra_rows == 0:
-                autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=25)
+                autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=15)
             else:
                 offset_row = row + extra_rows
                 offset_cell = f"L{offset_row}"
                 top_left_offset_cell = get_top_left_cell(ws, offset_cell)
-                autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=25)
+                autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
 
    # Write items (first page only)
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
@@ -356,34 +357,46 @@ def get_username_from_id(user_id):
 
 def convert_excel_to_pdf(excel_path):
     """
-    Convert an Excel file to PDF using LibreOffice.
-    Returns the path to the generated PDF.
+    Download Excel from S3 if needed, convert to PDF using LibreOffice,
+    upload PDF to S3 under delivery_reports_pdf/, and return S3 URL.
     """
-    base_dir = Path(excel_path).parent
-    pdf_dir = base_dir / "PDF files"
-    pdf_dir.mkdir(exist_ok=True)
+    excel_path = Path(excel_path)
+    pdf_filename = excel_path.with_suffix('.pdf').name
 
-    command = [
-        'libreoffice',
-        '--headless',
-        '--convert-to', 'pdf',
-        '--outdir', str(pdf_dir),
-        str(excel_path)
-    ]
-    logger.debug(f"Running command: {' '.join(command)}")
-    result = subprocess.run(command, capture_output=True)
-    logger.debug(f"LibreOffice return code: {result.returncode}")
-    logger.debug(f"LibreOffice stdout: {result.stdout.decode()}")
-    logger.debug(f"LibreOffice stderr: {result.stderr.decode()}")
+    # Download Excel from S3 to a temp file if not present locally
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        local_excel = tmpdir_path / excel_path.name
 
-    if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice failed: {result.stderr.decode()}")
+        # Download from S3 storage
+        with default_storage.open(str(excel_path.relative_to(settings.MEDIA_ROOT)), 'rb') as f_in, open(local_excel, 'wb') as f_out:
+            f_out.write(f_in.read())
 
-    pdf_filename = Path(excel_path).with_suffix('.pdf').name
-    pdf_path = pdf_dir / pdf_filename
-    logger.debug(f"Expected PDF path: {pdf_path}")
-    logger.debug(f"PDF file exists: {pdf_path.exists()}")
-    return str(pdf_path)
+        # Convert to PDF
+        command = [
+            'libreoffice',
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', str(tmpdir_path),
+            str(local_excel)
+        ]
+        result = subprocess.run(command, capture_output=True)
+        pdf_path = tmpdir_path / pdf_filename
+
+        if result.returncode != 0 or not pdf_path.exists():
+            raise RuntimeError(
+                f"LibreOffice failed or PDF not created.\n"
+                f"Command: {' '.join(command)}\n"
+                f"Stdout: {result.stdout.decode()}\n"
+                f"Stderr: {result.stderr.decode()}"
+            )
+
+        # Upload PDF to S3
+        s3_relative_path = f"delivery_reports_pdf/{pdf_filename}"
+        with open(pdf_path, "rb") as f:
+            default_storage.save(s3_relative_path, ContentFile(f.read()))
+
+    return default_storage.url(s3_relative_path)
 
 def autofit_row_height(ws, cell, text, multiplier=14):
     """
@@ -403,7 +416,7 @@ def autofit_row_height(ws, cell, text, multiplier=14):
             total_lines += (len(line) - 1) // chars_per_line + 1
     ws.row_dimensions[row_num].height = max(15, total_lines * multiplier)
 
-def get_relative_and_abs_path(file_path=None, subdir="delivery_reports", ext="xlsx"):
+def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", ext="xlsx"):
     """
     Returns (relative_path, abs_path) for storage and local use.
     """
@@ -414,7 +427,6 @@ def get_relative_and_abs_path(file_path=None, subdir="delivery_reports", ext="xl
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         relative_path = Path(subdir) / f"delivery_report_{timestamp}.{ext}"
         abs_path = Path(settings.MEDIA_ROOT) / relative_path
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
     return str(relative_path), str(abs_path)
 
 def create_collage_of_images(ws, image_urls, start_cell, end_cell):
@@ -476,7 +488,6 @@ def insert_cmr_delivery_slip_images(ws, cmr_url=None, delivery_slip_url=None):
     """
     Insert CMR and delivery slip images as full-size images, each on a new worksheet.
     """
-    from openpyxl import Workbook
 
     wb = ws.parent  # Get the workbook from the current worksheet
     image_data = [

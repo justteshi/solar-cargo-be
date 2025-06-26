@@ -8,7 +8,7 @@ from datetime import datetime
 from .models import DeliveryReport
 from .pagination import ReportsResultsSetPagination
 from .serializers import DeliveryReportSerializer
-from .utils import save_report_to_excel, get_username_from_id, convert_excel_to_pdf
+from .utils import save_report_to_excel, get_username_from_id, convert_excel_to_pdf, get_relative_and_abs_path
 from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 import os
@@ -40,7 +40,7 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
             report_data = response.data
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # Use MEDIA_ROOT for absolute path
-            excel_dir = os.path.join(settings.MEDIA_ROOT, "delivery_reports")
+            excel_dir = os.path.join(settings.MEDIA_ROOT, "delivery_reports_excel")
             os.makedirs(excel_dir, exist_ok=True)
             file_path = os.path.join(excel_dir, f"delivery_report_{timestamp}.xlsx")
             user_id = report_data.get('user')
