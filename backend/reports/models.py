@@ -86,7 +86,7 @@ class DeliveryReport(models.Model):
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
-    image = models.ImageField(upload_to='delivery_reports/additional_images/')
+    image = models.ImageField(upload_to='additional_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 class DeliveryReportItem(models.Model):
