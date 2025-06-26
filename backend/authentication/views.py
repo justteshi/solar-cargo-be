@@ -16,7 +16,7 @@ from .serializers import LoginSerializer, LogoutSerializer, LogoutResponseSerial
 
 
 User = get_user_model()
-
+@extend_schema(tags=['Authentication'])
 class AuthViewSet(viewsets.ViewSet):
     serializer_action_classes = {
         'login':   LoginSerializer,
@@ -31,7 +31,6 @@ class AuthViewSet(viewsets.ViewSet):
     @extend_schema(
         request=LoginSerializer,
         responses={200: TokenResponseSerializer},
-        tags=['Authentication']
     )
     def login(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -62,7 +61,6 @@ class AuthViewSet(viewsets.ViewSet):
     @extend_schema(
         request=TokenRefreshSerializer,
         responses={200: AccessSerializer},
-        tags=['Authentication']
     )
     def refresh(self, request):
         serializer = TokenRefreshSerializer(data=request.data)
@@ -80,7 +78,7 @@ class AuthViewSet(viewsets.ViewSet):
     @extend_schema(
         request=LogoutSerializer,
         responses={200: LogoutResponseSerializer},
-        auth=['bearerAuth'], tags=['Authentication']
+        auth=['bearerAuth'],
     )
     def logout(self, request):
         serializer = LogoutSerializer(data=request.data)
