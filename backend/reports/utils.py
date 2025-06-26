@@ -360,7 +360,7 @@ def convert_excel_to_pdf(excel_path):
     Returns the path to the generated PDF.
     """
     base_dir = Path(excel_path).parent
-    pdf_dir = base_dir / "PDF files"
+    pdf_dir = base_dir
     pdf_dir.mkdir(exist_ok=True)
 
     command = [
