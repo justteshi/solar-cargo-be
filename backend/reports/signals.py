@@ -3,7 +3,7 @@ import tempfile
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from .models import DeliveryReport
-from .utils import recognize_plate, PlateRecognitionError
+from .plate_recognition_utils import recognize_plate, PlateRecognitionError
 
 @receiver(post_save, sender=DeliveryReport)
 def auto_recognize_plate(sender, instance, created, **kwargs):

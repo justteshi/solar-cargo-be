@@ -6,5 +6,5 @@ class ReportsConfig(AppConfig):
     name = 'reports'
 
     def ready(self):
-        import reports.signals  # 👈 Ensures signal is registered
+        pass
 

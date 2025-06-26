@@ -1,7 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.db import models
-import os
-# from .utils import recognize_plate, PlateRecognitionError
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
