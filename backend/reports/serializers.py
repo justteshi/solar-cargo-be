@@ -203,3 +203,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             )
 
         return report
+
+class ItemAutocompleteFilterSerializer(serializers.Serializer):
+    q = serializers.CharField(required=True, min_length=2, help_text="Search term for item name")

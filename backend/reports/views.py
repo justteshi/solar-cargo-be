@@ -1,15 +1,15 @@
 from django.views.generic import TemplateView
 from rest_framework import viewsets
 from rest_framework.parsers import MultiPartParser, FormParser
-from drf_spectacular.utils import extend_schema
-
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework.generics import ListAPIView
 from authentication.permissions import IsAdmin
 from datetime import datetime
-from .models import DeliveryReport
+from .models import DeliveryReport, Item
 from .pagination import ReportsResultsSetPagination
-from .serializers import DeliveryReportSerializer
+from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer
 from .utils import save_report_to_excel, get_username_from_id
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -90,3 +90,21 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
 
 class HomePageView(TemplateView):
     template_name = 'home.html'
+
+
+@extend_schema(
+    tags=["Items"],
+    parameters=[
+        OpenApiParameter(name='q', description='Search term', required=True, type=str),
+    ],
+    responses=ItemSerializer(many=True),
+)
+class ItemAutocompleteView(ListAPIView):
+    serializer_class = ItemSerializer
+    permission_classes = [AllowAny] # Can be set IsAuthenticated if needed
+
+    def get_queryset(self):
+        query_params = ItemAutocompleteFilterSerializer(data=self.request.GET)
+        query_params.is_valid(raise_exception=True)
+        query = query_params.validated_data['q']
+        return Item.objects.filter(name__icontains=query).order_by('name')[:10]
