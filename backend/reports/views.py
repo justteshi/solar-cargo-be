@@ -1,26 +1,24 @@
-from django.views.generic import TemplateView
-from rest_framework import viewsets
-from rest_framework.parsers import MultiPartParser, FormParser
-from drf_spectacular.utils import extend_schema
-from rest_framework.decorators import api_view, permission_classes
-from drf_spectacular.utils import extend_schema, OpenApiParameter
-from rest_framework.generics import ListAPIView
-from authentication.permissions import IsAdmin
+import os
 from datetime import datetime
-from .models import DeliveryReport, Item
-from .pagination import ReportsResultsSetPagination
-from .serializers import DeliveryReportSerializer
-from .excel_utils import save_report_to_excel
-from .pdf_utils import convert_excel_to_pdf
-from .utils import get_username_from_id
-from rest_framework.permissions import IsAuthenticated
+from django.views.generic import TemplateView
 from django.http import FileResponse, Http404
 from django.core.files.storage import default_storage
 from django.conf import settings
-import os
-from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer
-from .utils import save_report_to_excel, get_username_from_id
+from rest_framework import viewsets
+from rest_framework.generics import ListAPIView
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from authentication.permissions import IsAdmin
+
+from .models import DeliveryReport, Item
+from .pagination import ReportsResultsSetPagination
+from .utils.main_utils import get_username_from_id
+from .utils.excel_utils import save_report_to_excel
+from .utils.pdf_utils import convert_excel_to_pdf
+from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer
+
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -67,8 +65,8 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
             # Update the DeliveryReport model
             from .models import DeliveryReport  # adjust import as needed
             report_instance = DeliveryReport.objects.get(id=report_id)
-            report_instance.excel_report_file = f"delivery_reports/{excel_filename}"
-            report_instance.pdf_report_file = f"delivery_reports/{pdf_filename}"
+            report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
+            report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
             report_instance.save()
 
         return response
