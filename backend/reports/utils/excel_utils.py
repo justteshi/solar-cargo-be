@@ -1,4 +1,6 @@
 import io
+import requests
+
 from datetime import datetime
 from pathlib import Path
 from django.core.files.base import ContentFile
@@ -7,6 +9,7 @@ from django.conf import settings
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 
 from .image_utils import create_collage_of_images, insert_cmr_delivery_slip_images
 
@@ -101,7 +104,6 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         data.get('trailer_license_plate_image'),
         data.get('proof_of_delivery_image'),
     ]
-    image_urls += [img.get('image') for img in data.get('additional_images_urls', []) if img.get('image')]
     image_urls = [url for url in image_urls if url]
     create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell)
     ws['D46'] = datetime.now().strftime("%Y-%m-%d")
@@ -131,6 +133,23 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     delivery_slip_url = data.get('delivery_slip_image')
     if cmr_url or delivery_slip_url:
         insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
+
+    additional_images = data.get('additional_images_urls', [])
+    for idx, img_data in enumerate(additional_images, start=1):
+        url = img_data.get('image')
+        if not url:
+            continue
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            img_bytes = io.BytesIO(response.content)
+            img_ws = wb.create_sheet(title=f"Additional Image {idx}")
+            xl_img = XLImage(img_bytes)
+            xl_img.anchor = "A1"
+            img_ws.add_image(xl_img)
+        except Exception as e:
+            # Optionally log error
+            pass
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
