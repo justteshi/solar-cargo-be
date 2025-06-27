@@ -44,6 +44,18 @@ class DeliveryReport(models.Model):
         null=True,
         blank=True)
 
+    excel_report_file = models.FileField(
+        upload_to='delivery_reports/',
+        null=True,
+        blank=True,
+        # editable=False
+    )
+    pdf_report_file = models.FileField(
+        upload_to='delivery_reports/PDF files/',
+        null=True,
+        blank=True,
+        # editable=False
+    )
 
 
     created_at = models.DateTimeField(auto_now_add=True)
