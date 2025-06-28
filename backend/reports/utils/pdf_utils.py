@@ -1,9 +1,12 @@
 import tempfile
 from pathlib import Path
 import subprocess
+import logging
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 def convert_excel_to_pdf(excel_path):
     excel_path = Path(excel_path)
@@ -23,11 +26,17 @@ def convert_excel_to_pdf(excel_path):
         result = subprocess.run(command, capture_output=True)
         pdf_path = tmpdir_path / pdf_filename
         if result.returncode != 0 or not pdf_path.exists():
-            raise RuntimeError(
-                f"LibreOffice failed or PDF not created.\n"
+            logger.error(
+                "LibreOffice failed or PDF not created.\n"
                 f"Command: {' '.join(command)}\n"
-                f"Stdout: {result.stdout.decode()}\n"
-                f"Stderr: {result.stderr.decode()}"
+                f"Stdout: {result.stdout.decode(errors='replace')}\n"
+                f"Stderr: {result.stderr.decode(errors='replace')}"
+            )
+            raise RuntimeError(
+                "LibreOffice failed or PDF not created.\n"
+                f"Command: {' '.join(command)}\n"
+                f"Stdout: {result.stdout.decode(errors='replace')}\n"
+                f"Stderr: {result.stderr.decode(errors='replace')}"
             )
         s3_relative_path = f"delivery_reports_pdf/{pdf_filename}"
         with open(pdf_path, "rb") as f:

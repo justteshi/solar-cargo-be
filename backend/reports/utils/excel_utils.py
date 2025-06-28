@@ -1,5 +1,6 @@
 import io
 import requests
+import logging
 
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 
 from .image_utils import create_collage_of_images, insert_cmr_delivery_slip_images
+
+logger = logging.getLogger(__name__)
 
 ITEMS_PER_PAGE = 7
 TICK = "✓"
@@ -93,7 +96,6 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
                 top_left_offset_cell = get_top_left_cell(ws, offset_cell)
                 autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
-    items = data.get("items", [])
     extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
     image_start_row = 28 + extra_rows
     image_end_row = 41 + extra_rows
@@ -133,29 +135,28 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     delivery_slip_url = data.get('delivery_slip_image')
     if cmr_url or delivery_slip_url:
         insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
-
     additional_images = data.get('additional_images_urls', [])
-    for idx, img_data in enumerate(additional_images, start=1):
-        url = img_data.get('image')
-        if not url:
-            continue
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-            img_bytes = io.BytesIO(response.content)
-            img_ws = wb.create_sheet(title=f"Additional Image {idx}")
-            xl_img = XLImage(img_bytes)
-            xl_img.anchor = "A1"
-            img_ws.add_image(xl_img)
-            img_ws.page_setup.orientation = "portrait"
-            img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
-            img_ws.page_setup.fitToWidth = 1
-            img_ws.page_setup.fitToHeight = 1
-            img_ws.page_setup.fitToPage = True
-            img_ws.page_setup.scale = None
-        except Exception as e:
-            # Optionally log error
-            pass
+    with requests.Session() as session:
+        for idx, img_data in enumerate(additional_images, start=1):
+            url = img_data.get('image')
+            if not url:
+                continue
+            try:
+                response = session.get(url)
+                response.raise_for_status()
+                img_bytes = io.BytesIO(response.content)
+                img_ws = wb.create_sheet(title=f"Additional Image {idx}")
+                xl_img = XLImage(img_bytes)
+                xl_img.anchor = "A1"
+                img_ws.add_image(xl_img)
+                img_ws.page_setup.orientation = "portrait"
+                img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+                img_ws.page_setup.fitToWidth = 1
+                img_ws.page_setup.fitToHeight = 1
+                img_ws.page_setup.fitToPage = True
+                img_ws.page_setup.scale = None
+            except Exception as e:
+                logger.error(f"Error adding additional image from {url}: {e}")
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
