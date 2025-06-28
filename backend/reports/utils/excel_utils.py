@@ -25,7 +25,7 @@ CELL_MAP = {
     'licence_plate_truck': 'C13',
     'licence_plate_trailer': 'C14',
     'weather_conditions': 'C15',
-    'user': 'D45',
+    'user': 'D44',
 }
 STATUS_FIELDS = {
     'load_secured_status': 18,
@@ -95,8 +95,8 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
     items = data.get("items", [])
     extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
-    image_start_row = 29 + extra_rows
-    image_end_row = 42 + extra_rows
+    image_start_row = 28 + extra_rows
+    image_end_row = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
     image_end_cell = f"L{image_end_row}"
     image_urls = [
@@ -106,8 +106,8 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     ]
     image_urls = [url for url in image_urls if url]
     create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell)
-    ws['D46'] = datetime.now().strftime("%Y-%m-%d")
-    ws['D46'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ws['D45'] = datetime.now().strftime("%Y-%m-%d")
+    ws['D45'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -123,7 +123,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
             wb = load_workbook(f)
             ws = wb.active
         extra_rows = 0
-    comments_row = 27 + extra_rows
+    comments_row = 26 + extra_rows
     comments_cell = f"A{comments_row}"
     if 'comments' in data:
         ws[comments_cell] = data['comments']
@@ -147,6 +147,12 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
             xl_img = XLImage(img_bytes)
             xl_img.anchor = "A1"
             img_ws.add_image(xl_img)
+            img_ws.page_setup.orientation = "portrait"
+            img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+            img_ws.page_setup.fitToWidth = 1
+            img_ws.page_setup.fitToHeight = 1
+            img_ws.page_setup.fitToPage = True
+            img_ws.page_setup.scale = None
         except Exception as e:
             # Optionally log error
             pass

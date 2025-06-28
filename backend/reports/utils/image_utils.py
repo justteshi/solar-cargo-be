@@ -70,10 +70,13 @@ def insert_cmr_delivery_slip_images(ws, cmr_url=None, delivery_slip_url=None):
             pil_img.save(output_img, format='PNG')
             output_img.seek(0)
             xl_img = XLImage(output_img)
-            xl_img.anchor = "A1"
             img_ws.add_image(xl_img)
-            img_ws.row_dimensions[1].height = pil_img.height * 0.75 / 1.33
-            img_ws.column_dimensions['A'].width = pil_img.width / 7
+            img_ws.page_setup.orientation = "portrait"
+            img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+            img_ws.page_setup.fitToWidth = 1
+            img_ws.page_setup.fitToHeight = 1
+            img_ws.page_setup.fitToPage = True
+            img_ws.page_setup.scale = None
         except Exception as e:
             logger.error(f"Error inserting full-size image on new sheet: {e}")
 
