@@ -30,6 +30,7 @@ class DeliveryReportAdmin(admin.ModelAdmin):
     )
     search_fields = ('delivery_slip_number', 'location', 'supplier')
     list_filter = ('created_at', 'checking_company', 'logistic_company')
+    readonly_fields = ('excel_report_file', 'pdf_report_file')
 
     @admin.display(description='DeliveryReport ID')
     def deliveryreport_link(self, obj):
