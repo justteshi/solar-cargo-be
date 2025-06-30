@@ -1,7 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.db import models
-import os
-# from .utils import recognize_plate, PlateRecognitionError
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
@@ -46,6 +44,18 @@ class DeliveryReport(models.Model):
         null=True,
         blank=True)
 
+    excel_report_file = models.FileField(
+        upload_to='delivery_reports/',
+        null=True,
+        blank=True,
+        # editable=False
+    )
+    pdf_report_file = models.FileField(
+        upload_to='delivery_reports/PDF files/',
+        null=True,
+        blank=True,
+        # editable=False
+    )
 
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -88,7 +98,7 @@ class DeliveryReport(models.Model):
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
-    image = models.ImageField(upload_to='delivery_reports/additional_images/')
+    image = models.ImageField(upload_to='additional_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 class DeliveryReportItem(models.Model):

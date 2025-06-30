@@ -69,6 +69,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         model = DeliveryReport
         fields = [
             # Step 1 report general info:
+            'id',
             'location',
             'checking_company',
             'supplier',
