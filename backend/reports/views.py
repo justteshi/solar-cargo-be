@@ -1,24 +1,28 @@
 import os
-from datetime import datetime
+from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from django.http import FileResponse, Http404
 from django.core.files.storage import default_storage
 from django.conf import settings
 from rest_framework import viewsets
-from rest_framework.generics import ListAPIView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated, AllowAny
 from drf_spectacular.utils import extend_schema, OpenApiParameter
+from rest_framework.generics import ListAPIView
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from authentication.permissions import IsAdmin
 
-from .models import DeliveryReport, Item
+from datetime import datetime
+from .models import DeliveryReport, Item, Location, LocationAssignment
 from .pagination import ReportsResultsSetPagination
 from .utils.main_utils import get_username_from_id
 from .utils.excel_utils import save_report_to_excel
 from .utils.pdf_utils import convert_excel_to_pdf
-from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer
 
+from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer, LocationSerializer
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -169,3 +173,39 @@ def download_pdf_report(request, report_id):
     file = default_storage.open(file_path, 'rb')
     filename = os.path.basename(file_path)
     return FileResponse(file, as_attachment=True, filename=filename)
+
+class MyLocationsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        assigned_locations = Location.objects.filter(
+            id__in=LocationAssignment.objects.filter(user=request.user).values_list('location_id', flat=True)
+        )
+        serializer = LocationSerializer(assigned_locations, many=True)
+        return Response(serializer.data)
+
+@extend_schema(
+    parameters=[
+        OpenApiParameter(
+            name='location_id',
+            description='ID of the Location',
+            required=True,
+            type=int,
+            location=OpenApiParameter.PATH
+        )
+    ],
+    responses={200: DeliveryReportSerializer(many=True)},
+    tags=["Delivery Reports"]
+)
+class ReportsByLocationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, location_id):
+        location = get_object_or_404(Location, id=location_id)
+
+        if not LocationAssignment.objects.filter(user=request.user, location=location).exists():
+            return Response({"detail": "Not authorized for this location."}, status=403)
+
+        reports = DeliveryReport.objects.filter(location_logo=location)
+        serializer = DeliveryReportSerializer(reports, many=True)
+        return Response(serializer.data)
