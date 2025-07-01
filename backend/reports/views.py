@@ -127,7 +127,6 @@ class ItemAutocompleteView(ListAPIView):
         return Item.objects.filter(name__icontains=query).order_by('name')[:10]
 
 
-
 @extend_schema(
     tags=["Download Reports"],
     description="Download the Excel file for a specific delivery report.",
@@ -138,17 +137,17 @@ class ItemAutocompleteView(ListAPIView):
 def download_excel_report(request, report_id):
     try:
         report = DeliveryReport.objects.get(id=report_id)
-        file_path = str(report.excel_report_file)  # e.g. "delivery_reports/report_123.xlsx"
+    except DeliveryReport.DoesNotExist:
+        raise Http404("Report not found.")
 
-        if not default_storage.exists(file_path):
-            raise FileNotFoundError
+    file_path = str(report.excel_report_file)
+    if not file_path or not default_storage.exists(file_path):
+        raise Http404("Excel file not found.")
 
-        file = default_storage.open(file_path, 'rb')
-        filename = os.path.basename(file_path)
-        return FileResponse(file, as_attachment=True, filename=filename)
+    file = default_storage.open(file_path, 'rb')
+    filename = os.path.basename(file_path)
+    return FileResponse(file, as_attachment=True, filename=filename)
 
-    except (DeliveryReport.DoesNotExist, FileNotFoundError):
-        raise Http404("Excel report not found.")
 
 @extend_schema(
     tags=["Download Reports"],
@@ -160,14 +159,13 @@ def download_excel_report(request, report_id):
 def download_pdf_report(request, report_id):
     try:
         report = DeliveryReport.objects.get(id=report_id)
-        file_path = str(report.pdf_report_file)  # e.g. "delivery_reports/report_123.pdf"
+    except DeliveryReport.DoesNotExist:
+        raise Http404("Report not found.")
 
-        if not default_storage.exists(file_path):
-            raise FileNotFoundError
+    file_path = str(report.pdf_report_file)
+    if not file_path or not default_storage.exists(file_path):
+        raise Http404("PDF file not found.")
 
-        file = default_storage.open(file_path, 'rb')
-        filename = os.path.basename(file_path)
-        return FileResponse(file, as_attachment=True, filename=filename)
-
-    except (DeliveryReport.DoesNotExist, FileNotFoundError):
-        raise Http404("PDF report not found.")
+    file = default_storage.open(file_path, 'rb')
+    filename = os.path.basename(file_path)
+    return FileResponse(file, as_attachment=True, filename=filename)
