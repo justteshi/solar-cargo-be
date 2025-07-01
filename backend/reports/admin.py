@@ -42,3 +42,16 @@ class DeliveryReportAdmin(admin.ModelAdmin):
 class ItemAdmin(admin.ModelAdmin):
     search_fields = ['name']
     list_display = ['name']
+
+from .models import Location, LocationAssignment
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    search_fields = ['name']
+
+@admin.register(LocationAssignment)
+class LocationAssignmentAdmin(admin.ModelAdmin):
+    list_display = ['user', 'location']
+    search_fields = ['user__email', 'location__name']
+    autocomplete_fields = ['user', 'location']
