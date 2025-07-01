@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
+from .image_utils import fetch_image_bytes
 
 from .image_utils import create_collage_of_images, insert_cmr_delivery_slip_images
 
@@ -136,27 +137,24 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     if cmr_url or delivery_slip_url:
         insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
     additional_images = data.get('additional_images_urls', [])
-    with requests.Session() as session:
-        for idx, img_data in enumerate(additional_images, start=1):
-            url = img_data.get('image')
-            if not url:
-                continue
-            try:
-                response = session.get(url)
-                response.raise_for_status()
-                img_bytes = io.BytesIO(response.content)
-                img_ws = wb.create_sheet(title=f"Additional Image {idx}")
-                xl_img = XLImage(img_bytes)
-                xl_img.anchor = "A1"
-                img_ws.add_image(xl_img)
-                img_ws.page_setup.orientation = "portrait"
-                img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
-                img_ws.page_setup.fitToWidth = 1
-                img_ws.page_setup.fitToHeight = 1
-                img_ws.page_setup.fitToPage = True
-                img_ws.page_setup.scale = None
-            except Exception as e:
-                logger.error(f"Error adding additional image from {url}: {e}")
+    for idx, img_data in enumerate(additional_images, start=1):
+        url = img_data.get('image')
+        if not url:
+            continue
+        try:
+            img_bytes = io.BytesIO(fetch_image_bytes(url))
+            img_ws = wb.create_sheet(title=f"Additional Image {idx}")
+            xl_img = XLImage(img_bytes)
+            xl_img.anchor = "A1"
+            img_ws.add_image(xl_img)
+            img_ws.page_setup.orientation = "portrait"
+            img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+            img_ws.page_setup.fitToWidth = 1
+            img_ws.page_setup.fitToHeight = 1
+            img_ws.page_setup.fitToPage = True
+            img_ws.page_setup.scale = None
+        except Exception as e:
+            logger.error(f"Error adding additional image from {url}: {e}")
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
