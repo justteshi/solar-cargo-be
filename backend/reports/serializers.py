@@ -1,7 +1,12 @@
 from rest_framework import serializers
-from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage
+from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location
 from drf_spectacular.utils import extend_schema_field
 import json
+
+class LocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Location
+        fields = ['id', 'name', 'logo']
 
 # Delivery Report Item
 class ItemSerializer(serializers.ModelSerializer):
