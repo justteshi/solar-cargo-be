@@ -1,4 +1,5 @@
 import os
+import boto3
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from django.http import FileResponse, Http404
@@ -11,7 +12,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from .models import DeliveryReport, DeliveryReportImage
 from authentication.permissions import IsAdmin
 
 from datetime import datetime
@@ -173,6 +174,49 @@ def download_pdf_report(request, report_id):
     file = default_storage.open(file_path, 'rb')
     filename = os.path.basename(file_path)
     return FileResponse(file, as_attachment=True, filename=filename)
+
+@extend_schema(
+    tags=["Media"],
+    description="Proxy endpoint to securely serve all delivery report images (including additional images) except report files. Requires authentication.",
+    responses={200: {"type": "file"}, 404: {"description": "File not found"}}
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def delivery_report_media_file_proxy(request, report_id, file_field, additional_image_id=None):
+    allowed_fields = [
+        "cmr_image",
+        "proof_of_delivery_image",
+        "delivery_slip_image",
+        "truck_license_plate_image",
+        "trailer_license_plate_image",
+    ]
+
+    if file_field == "additional_image":
+        if not additional_image_id:
+            raise Http404("Additional image ID required.")
+        try:
+            image_obj = DeliveryReportImage.objects.get(id=additional_image_id, delivery_report_id=report_id)
+            s3_key = image_obj.image.name
+        except DeliveryReportImage.DoesNotExist:
+            raise Http404("Additional image not found.")
+    elif file_field in allowed_fields:
+        try:
+            report = DeliveryReport.objects.get(id=report_id)
+            file_field_obj = getattr(report, file_field, None)
+            if not file_field_obj or not file_field_obj.name:
+                raise Http404("File not found.")
+            s3_key = file_field_obj.name
+        except DeliveryReport.DoesNotExist:
+            raise Http404("Report not found.")
+    else:
+        raise Http404("Invalid file type.")
+
+    s3 = boto3.client('s3')
+    try:
+        obj = s3.get_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=s3_key)
+        return FileResponse(obj['Body'], content_type=obj['ContentType'])
+    except Exception:
+        raise Http404("File not found in S3.")
 
 class MyLocationsView(APIView):
     permission_classes = [IsAuthenticated]

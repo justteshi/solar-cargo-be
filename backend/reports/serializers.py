@@ -29,7 +29,7 @@ class DeliveryReportItemSerializer(serializers.ModelSerializer):
 class DeliveryReportImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeliveryReportImage
-        fields = ['image', 'uploaded_at']
+        fields = ['id', 'image', 'uploaded_at']
 # End Delivery Report Images Serializer
 
 
