@@ -20,11 +20,10 @@ services:
       - traefik.enable=true
       - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.dialTimeout=120s
       - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.responseHeaderTimeout=120s
-      - traefik.http.routers.web-secure.middlewares=custom-timeouts
-      - traefik.http.routers.web-secure.entryPoints=https
-      - traefik.http.routers.web-secure.rule=Host(`solarcargo.commitandpray.com`)
-      - traefik.http.routers.web-secure.tls=true
-      - traefik.http.services.web.loadbalancer.server.port=5000
+      - traefik.http.routers.custom-router.rule=Host(`solarcargo.commitandpray.com`)
+      - traefik.http.routers.custom-router.entrypoints=https
+      - traefik.http.routers.custom-router.tls=true
+      - traefik.http.routers.custom-router.middlewares=custom-timeouts
 
 
   db:
