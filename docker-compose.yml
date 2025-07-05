@@ -16,6 +16,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.dialTimeout=120s
+      - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.responseHeaderTimeout=120s
+      - traefik.http.routers.web-secure.middlewares=custom-timeouts
+      - traefik.http.routers.web-secure.entryPoints=https
+      - traefik.http.routers.web-secure.rule=Host(`solarcargo.commitandpray.com`)
+      - traefik.http.routers.web-secure.tls=true
+      - traefik.http.services.web.loadbalancer.server.port=5000
+
 
   db:
     image: postgres:14
@@ -34,16 +44,6 @@ services:
       retries: 5
     ports:
       - "5433:5432"
-
-  labels:
-    - traefik.enable=true
-    - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.dialTimeout=120s
-    - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.responseHeaderTimeout=120s
-    - traefik.http.routers.web-secure.middlewares=custom-timeouts
-    - traefik.http.routers.web-secure.entryPoints=https
-    - traefik.http.routers.web-secure.rule=Host(`solarcargo.commitandpray.com`)
-    - traefik.http.routers.web-secure.tls=true
-    - traefik.http.services.web.loadbalancer.server.port=5000
 
 volumes:
   postgres_data:
