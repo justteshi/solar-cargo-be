@@ -8,6 +8,10 @@ SECRET_KEY=dev-secret-key!421&&76b
 POSTGRES_DB=solarCargoDb
 POSTGRES_USER=solarCargoDbUser
 POSTGRES_PASSWORD=solarCargoSuperSecretDbPassword
+AWS_ACCESS_KEY_ID=access key from messenger
+AWS_SECRET_ACCESS_KEY=access secret key from messenger
+AWS_STORAGE_BUCKET_NAME=solar-cargo-file-storage
+AWS_S3_REGION_NAME=eu-central-1
 ```
 ### 2. Build and start containers
 ```
