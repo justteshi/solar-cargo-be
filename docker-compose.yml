@@ -16,14 +16,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    labels:
-      - traefik.enable=true
-      - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.dialTimeout=120s
-      - traefik.http.middlewares.custom-timeouts.forwardingTimeouts.responseHeaderTimeout=120s
-      - traefik.http.routers.custom-router.rule=Host(`solarcargo.commitandpray.com`)
-      - traefik.http.routers.custom-router.entrypoints=https
-      - traefik.http.routers.custom-router.tls=true
-      - traefik.http.routers.custom-router.middlewares=custom-timeouts
 
 
   db:
