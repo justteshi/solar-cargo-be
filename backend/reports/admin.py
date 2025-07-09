@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportItem
+from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportItem, DeliveryReportDamageImage
 from django.utils.html import format_html
 from django.urls import reverse
 
@@ -16,21 +16,27 @@ class DeliveryReportItemInline(admin.TabularInline):
     fields = ['item', 'quantity']
     show_change_link = True
 
+class DeliveryReportDamageImageInline(admin.TabularInline):
+    model = DeliveryReportDamageImage
+    extra = 0
+    verbose_name = 'Damage Image'
+    verbose_name_plural = 'Damage Images'
 
 @admin.register(DeliveryReport)
 class DeliveryReportAdmin(admin.ModelAdmin):
-    inlines = [DeliveryReportImageInline, DeliveryReportItemInline]
+    inlines = [DeliveryReportImageInline, DeliveryReportItemInline, DeliveryReportDamageImageInline]
     list_display = (
         'deliveryreport_link',
         'delivery_slip_number',
         'location',
         'checking_company',
         'supplier',
+        'damage_description',
         'created_at'
     )
     search_fields = ('delivery_slip_number', 'location', 'supplier')
     list_filter = ('created_at', 'checking_company', 'logistic_company')
-    readonly_fields = ('excel_report_file', 'pdf_report_file')
+    readonly_fields = ('excel_report_file', 'pdf_report_file', 'damage_description')
 
     @admin.display(description='DeliveryReport ID')
     def deliveryreport_link(self, obj):

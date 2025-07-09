@@ -94,6 +94,8 @@ class DeliveryReport(models.Model):
 
     location_logo = models.ForeignKey('Location', on_delete=models.CASCADE, related_name='reports', null=True, blank=True)
 
+    damage_description = models.TextField(null=True, blank=True)
+
     User = get_user_model()
     user = models.ForeignKey(
         User,
@@ -104,6 +106,15 @@ class DeliveryReport(models.Model):
 
     def __str__(self):
         return f"Delivery Report {self.id}"
+
+class DeliveryReportDamageImage(models.Model):
+    delivery_report = models.ForeignKey(
+        DeliveryReport,
+        on_delete=models.CASCADE,
+        related_name='damage_images'
+    )
+    image = models.ImageField(upload_to='damage_images/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
 class LocationAssignment(models.Model):
     user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)

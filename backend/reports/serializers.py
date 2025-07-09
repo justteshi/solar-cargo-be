@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location
+from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage
 from drf_spectacular.utils import extend_schema_field
 import json
 
@@ -24,7 +24,6 @@ class DeliveryReportItemSerializer(serializers.ModelSerializer):
 
 # End Delivery Report Item serializer
 
-
 # Delivery Report Images Serializer
 class DeliveryReportImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -32,6 +31,11 @@ class DeliveryReportImageSerializer(serializers.ModelSerializer):
         fields = ['image', 'uploaded_at']
 # End Delivery Report Images Serializer
 
+# Serializer for damage images
+class DeliveryReportDamageImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryReportDamageImage
+        fields = ['image', 'uploaded_at']
 
 class DeliveryReportSerializer(serializers.ModelSerializer):
     items_input = serializers.CharField(
@@ -69,6 +73,26 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     delivery_slip_status = serializers.BooleanField(required=False, allow_null=True)
     inspection_report_status = serializers.BooleanField(required=False, allow_null=True)
 
+    # Step 5: Damage section
+    damage_description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text='Damage description.'
+    )
+    damage_images_input = serializers.ListField(
+        child=serializers.ImageField(),
+        required=False,
+        allow_empty=True,
+        write_only=True,
+        max_length=4,
+        help_text='Up to 4 damage images.'
+    )
+    damage_images_urls = DeliveryReportDamageImageSerializer(
+        source='damage_images',
+        many=True,
+        read_only=True
+    )
 
     class Meta:
         model = DeliveryReport
@@ -111,6 +135,9 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'delivery_slip_image',
             'additional_images_input',
             'additional_images_urls',
+            'damage_description',
+            'damage_images_input',
+            'damage_images_urls',
             'user',
         ]
 
@@ -193,6 +220,8 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop('items_input', [])
         # Pop additional images files list
         additional_images_files = validated_data.pop('additional_images_input', [])
+        damage_images = validated_data.pop('damage_images_input', [])
+        damage_desc = validated_data.pop('damage_description', None)
 
         # Create DeliveryReport without extra fields
         report = DeliveryReport.objects.create(**validated_data)
@@ -212,6 +241,13 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 delivery_report=report,
                 image=uploaded_file
             )
+
+        # Process damage section
+        if damage_desc:
+            report.damage_description = damage_desc
+            report.save()
+        for img in damage_images:
+            DeliveryReportDamageImage.objects.create(delivery_report=report, image=img)
 
         return report
 
