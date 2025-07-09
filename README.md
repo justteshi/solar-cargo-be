@@ -75,4 +75,3 @@ The response envelope will look like:
 }
 ```
 
-
