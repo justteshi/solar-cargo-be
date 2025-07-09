@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
                 ('delivery_report', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='damage_images', to='reports.deliveryreport')),
             ],
         ),
-        migrations.AddField(
+        migrations.AlterField(
             model_name='deliveryreport',
             name='location',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='delivery_reports', to='reports.location'),
