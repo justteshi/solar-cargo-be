@@ -60,9 +60,17 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
             excel_filename = f"delivery_report_{timestamp}.xlsx"
             pdf_filename = f"delivery_report_{timestamp}.pdf"
             excel_path = os.path.join(excel_dir, excel_filename)
-            # Save Excel
+            # Get the username and location from the user ID
             user_id = report_data.get('user')
             report_data['user'] = get_username_from_id(user_id)
+            location_value = report_data.get('location')
+            if str(location_value).isdigit():
+                location_obj = Location.objects.filter(id=location_value).first()
+            else:
+                location_obj = Location.objects.filter(name=location_value).first()
+            logo_url = str(location_obj.logo.url) if location_obj and location_obj.logo else None
+            report_data['client_logo'] = logo_url
+            # Save Excel
             save_report_to_excel(report_data, file_path=excel_path)
             # Convert to PDF
             convert_excel_to_pdf(excel_path)

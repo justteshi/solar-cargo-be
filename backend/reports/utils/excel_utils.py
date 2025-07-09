@@ -8,11 +8,12 @@ from django.core.files.storage import default_storage
 from django.conf import settings
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.drawing.image import Image as XLImage
-from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page
-
-from .image_utils import create_collage_of_images, insert_cmr_delivery_slip_images
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
+from PIL import Image as PILImage, ImageOps
+from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page, get_range_dimensions, \
+    fetch_image_bytes, create_collage_of_images, insert_cmr_delivery_slip_images
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ ITEMS_PER_PAGE = 7
 TICK = "✓"
 CELL_MAP = {
     'location': 'A3',
-    'checking_company': 'E3',
     'supplier': 'C9',
+    'client_logo': 'I3',
     'delivery_slip_number': 'C10',
     'logistic_company': 'C11',
     'container_number': 'C12',
@@ -49,6 +50,7 @@ COMMENT_FIELD_MAP = {
     'inspection_report_status': 'inspection_report_comment',
 }
 
+
 def save_report_to_excel(data, file_path=None, template_path='delivery_report_template.xlsx'):
     relative_path, abs_path = get_relative_and_abs_path(file_path, subdir="delivery_reports_excel", ext="xlsx")
     items = data.get("items", [])
@@ -65,22 +67,51 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws = wb.active
         for key, cell in CELL_MAP.items():
             if key in data:
+                if key == 'client_logo':
+                    continue
                 value = data[key]
                 if isinstance(value, bool):
                     value = "Yes" if value else "No"
                 target_cell = get_top_left_cell(ws, cell)
                 ws[target_cell] = value
-                if key in ['location', 'checking_company']:
+                if key in ['location']:
                     ws[target_cell].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
                 elif key == 'user':
                     ws[target_cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     ws = wb.active
+    client_logo_url = data.get('client_logo')
+    if client_logo_url:
+        logger.info(f"Attempting to insert client logo from URL: {client_logo_url}")
+        try:
+            max_width, max_height = get_range_dimensions(ws, "I3", "L7")
+            img_bytes = io.BytesIO(fetch_image_bytes(client_logo_url))
+            pil_img = PILImage.open(img_bytes).convert("RGBA")
+            pil_img = ImageOps.contain(pil_img, (max_width, max_height), method=PILImage.LANCZOS)
+            output_img = io.BytesIO()
+            pil_img.save(output_img, format="PNG")
+            output_img.seek(0)
+            xl_img = XLImage(output_img)
+            # Calculate centering offset
+            offset_x = (max_width - pil_img.width) // 2
+            offset_y = (max_height - pil_img.height) // 2
+            # Get anchor cell indices
+            col = column_index_from_string("I") - 1
+            row = 3 - 1
+            # Set anchor with offset
+            xl_img.anchor = "I3"
+            ws.add_image(xl_img)
+            logger.info("Client logo image inserted, aspect ratio preserved and centered in merged cell.")
+        except Exception as e:
+            logger.error(f"Error inserting client logo image: {e}")
+    else:
+        logger.info("No client logo URL provided.")
     for field, row in STATUS_FIELDS.items():
         value = data.get(field, None)
         for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
             cell = f'{col}{row}'
             target_cell = get_top_left_cell(ws, cell)
-            ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (value is None and col == 'K')) else ""
+            ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (
+                        value is None and col == 'K')) else ""
             ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
         comment_key = COMMENT_FIELD_MAP.get(field)
         if comment_key is not None and comment_key in data:
@@ -100,7 +131,8 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     image_start_row = 28 + extra_rows
     image_end_row = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
-    image_end_cell = f"L{image_end_row}"
+    image_end_cell = f"L{image_end_row+9}"
+    logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
     image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
@@ -108,8 +140,8 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     ]
     image_urls = [url for url in image_urls if url]
     create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell)
-    ws['D45'] = datetime.now().strftime("%Y-%m-%d")
-    ws['D45'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ws['J44'] = datetime.now().strftime("%Y-%m-%d")
+    ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -155,6 +187,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         f.write(output.read())
     return abs_path
 
+
 def write_items_to_excel(ws, items, start_row):
     for idx, entry in enumerate(items):
         row = start_row + idx
@@ -162,6 +195,7 @@ def write_items_to_excel(ws, items, start_row):
         ws[get_top_left_cell(ws, f'F{row}')] = entry["item"]["name"]
         ws[get_top_left_cell(ws, f'I{row}')] = "Amount"
         ws[get_top_left_cell(ws, f'J{row}')] = entry["quantity"]
+
 
 def append_extra_items_to_excel(file_path, extra_items, insert_row):
     from openpyxl.styles.borders import Border, Side
@@ -209,6 +243,7 @@ def append_extra_items_to_excel(file_path, extra_items, insert_row):
         with default_storage.open(file_path, 'wb') as f:
             f.write(output.read())
 
+
 def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
     from copy import copy
     for col in range(min_col, max_col + 1):
@@ -222,11 +257,13 @@ def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
             dest_cell.protection = copy(src_cell.protection)
             dest_cell.alignment = copy(src_cell.alignment)
 
+
 def get_top_left_cell(ws, cell):
     for merged_range in ws.merged_cells.ranges:
         if cell in merged_range:
             return merged_range.start_cell.coordinate
     return cell
+
 
 def autofit_row_height(ws, cell, text, multiplier=14):
     col_letter = ''.join(filter(str.isalpha, cell))
@@ -242,6 +279,7 @@ def autofit_row_height(ws, cell, text, multiplier=14):
         else:
             total_lines += (len(line) - 1) // chars_per_line + 1
     ws.row_dimensions[row_num].height = max(15, total_lines * multiplier)
+
 
 def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", ext="xlsx"):
     if file_path:
