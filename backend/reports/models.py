@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.contrib.auth.models import User
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
@@ -15,7 +16,13 @@ class Location(models.Model):
         return self.name
 
 class DeliveryReport(models.Model):
-    location = models.CharField(max_length=255)
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_reports'
+    )
     checking_company = models.CharField(max_length=255)
     supplier = models.CharField(max_length=255)
     delivery_slip_number = models.CharField(max_length=100)
@@ -92,8 +99,6 @@ class DeliveryReport(models.Model):
 
     items = models.ManyToManyField(Item, through='DeliveryReportItem')
 
-    location_logo = models.ForeignKey('Location', on_delete=models.CASCADE, related_name='reports', null=True, blank=True)
-
     damage_description = models.TextField(null=True, blank=True)
 
     User = get_user_model()
@@ -115,14 +120,6 @@ class DeliveryReportDamageImage(models.Model):
     )
     image = models.ImageField(upload_to='damage_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
-
-class LocationAssignment(models.Model):
-    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
-    location = models.ForeignKey(Location, on_delete=models.CASCADE)
-
-    class Meta:
-        unique_together = ('user', 'location')
-
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')

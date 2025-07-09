@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'reports',
     'authentication',
+    'django_select2',
 ]
 
 REST_FRAMEWORK = {
