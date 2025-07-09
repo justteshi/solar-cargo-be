@@ -15,11 +15,11 @@ class Migration(migrations.Migration):
             model_name='deliveryreport',
             name='location_logo',
         ),
-        migrations.AddField(
-            model_name='deliveryreport',
-            name='damage_description',
-            field=models.TextField(blank=True, null=True),
-        ),
+        # migrations.AddField(
+        #     model_name='deliveryreport',
+        #     name='damage_description',
+        #     field=models.TextField(blank=True, null=True),
+        # ),
         migrations.AlterField(
             model_name='deliveryreport',
             name='location',
