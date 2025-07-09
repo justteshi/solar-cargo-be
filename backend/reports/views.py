@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from authentication.permissions import IsAdmin
 
 from datetime import datetime
-from .models import DeliveryReport, Item, Location, LocationAssignment
+from .models import DeliveryReport, Item, Location
 from .pagination import ReportsResultsSetPagination
 from .utils.main_utils import get_username_from_id
 from .utils.excel_utils import save_report_to_excel

@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.contrib.auth.models import User
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
@@ -92,8 +93,6 @@ class DeliveryReport(models.Model):
 
     items = models.ManyToManyField(Item, through='DeliveryReportItem')
 
-    location_logo = models.ForeignKey('Location', on_delete=models.CASCADE, related_name='reports', null=True, blank=True)
-
     User = get_user_model()
     user = models.ForeignKey(
         User,
@@ -104,14 +103,6 @@ class DeliveryReport(models.Model):
 
     def __str__(self):
         return f"Delivery Report {self.id}"
-
-class LocationAssignment(models.Model):
-    user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
-    location = models.ForeignKey(Location, on_delete=models.CASCADE)
-
-    class Meta:
-        unique_together = ('user', 'location')
-
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')

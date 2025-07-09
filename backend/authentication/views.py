@@ -50,6 +50,19 @@ class AuthViewSet(viewsets.ViewSet):
         refresh = RefreshToken.for_user(user)
         refresh['userName'] = user.username
         refresh['userRole'] = getattr(user.profile, 'role', None)
+
+        # Optional: Add full name if both first and last name exist
+        if user.first_name and user.last_name:
+            refresh['fullName'] = f"{user.first_name} {user.last_name}"
+
+        # 🔥 Add locations if assigned
+        profile = getattr(user, 'profile', None)
+        if profile:
+            locations = profile.locations.all()
+            if locations.exists():
+                # Add list of location names, or adjust to include more fields if needed
+                refresh['locations'] = [{'id': loc.id, 'name': loc.name} for loc in locations]
+
         access = refresh.access_token
 
         return Response({
