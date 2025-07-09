@@ -16,7 +16,13 @@ class Location(models.Model):
         return self.name
 
 class DeliveryReport(models.Model):
-    location = models.CharField(max_length=255)
+    location = models.ForeignKey(
+        Location,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_reports'
+    )
     checking_company = models.CharField(max_length=255)
     supplier = models.CharField(max_length=255)
     delivery_slip_number = models.CharField(max_length=100)
