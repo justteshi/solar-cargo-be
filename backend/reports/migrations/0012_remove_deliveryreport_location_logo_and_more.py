@@ -25,15 +25,15 @@ class Migration(migrations.Migration):
             name='location',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='delivery_reports', to='reports.location'),
         ),
-        migrations.CreateModel(
-            name='DeliveryReportDamageImage',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('image', models.ImageField(upload_to='damage_images/')),
-                ('uploaded_at', models.DateTimeField(auto_now_add=True)),
-                ('delivery_report', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='damage_images', to='reports.deliveryreport')),
-            ],
-        ),
+        # migrations.CreateModel(
+        #     name='DeliveryReportDamageImage',
+        #     fields=[
+        #         ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+        #         ('image', models.ImageField(upload_to='damage_images/')),
+        #         ('uploaded_at', models.DateTimeField(auto_now_add=True)),
+        #         ('delivery_report', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='damage_images', to='reports.deliveryreport')),
+        #     ],
+        # ),
         migrations.DeleteModel(
             name='LocationAssignment',
         ),
