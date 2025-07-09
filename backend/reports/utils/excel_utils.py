@@ -131,7 +131,8 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     image_start_row = 28 + extra_rows
     image_end_row = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
-    image_end_cell = f"L{image_end_row}"
+    image_end_cell = f"L{image_end_row+9}"
+    logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
     image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
