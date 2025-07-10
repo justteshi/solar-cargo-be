@@ -7,10 +7,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.conf import settings
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment
-from openpyxl.utils import get_column_letter, column_index_from_string
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
-from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
 from PIL import Image as PILImage, ImageOps
 from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page, get_range_dimensions, \
     fetch_image_bytes, create_collage_of_images, insert_cmr_delivery_slip_images
@@ -91,12 +90,6 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
             pil_img.save(output_img, format="PNG")
             output_img.seek(0)
             xl_img = XLImage(output_img)
-            # Calculate centering offset
-            offset_x = (max_width - pil_img.width) // 2
-            offset_y = (max_height - pil_img.height) // 2
-            # Get anchor cell indices
-            col = column_index_from_string("I") - 1
-            row = 3 - 1
             # Set anchor with offset
             xl_img.anchor = "I3"
             ws.add_image(xl_img)
@@ -111,7 +104,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
             cell = f'{col}{row}'
             target_cell = get_top_left_cell(ws, cell)
             ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (
-                        value is None and col == 'K')) else ""
+                    value is None and col == 'K')) else ""
             ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
         comment_key = COMMENT_FIELD_MAP.get(field)
         if comment_key is not None and comment_key in data:
@@ -131,7 +124,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     image_start_row = 28 + extra_rows
     image_end_row = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
-    image_end_cell = f"L{image_end_row+9}"
+    image_end_cell = f"L{image_end_row}"
     logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
     image_urls = [
         data.get('truck_license_plate_image'),
@@ -163,6 +156,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws[comments_cell] = data['comments']
         ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
         autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+    write_damages_section(ws, data)
     cmr_url = data.get('cmr_image')
     delivery_slip_url = data.get('delivery_slip_image')
     if cmr_url or delivery_slip_url:
@@ -290,3 +284,116 @@ def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", e
         relative_path = Path(subdir) / f"delivery_report_{timestamp}.{ext}"
         abs_path = Path(settings.MEDIA_ROOT) / relative_path
     return str(relative_path), str(abs_path)
+
+def set_table_outer_border(ws, min_row, max_row, min_col, max_col, border_side):
+    for col in range(min_col, max_col + 1):
+        # Top edge
+        cell = ws.cell(row=min_row, column=col)
+        cell.border = Border(top=border_side, left=cell.border.left, right=cell.border.right, bottom=cell.border.bottom)
+        # Bottom edge
+        cell = ws.cell(row=max_row, column=col)
+        cell.border = Border(bottom=border_side, left=cell.border.left, right=cell.border.right, top=cell.border.top)
+    for row in range(min_row, max_row + 1):
+        # Left edge
+        cell = ws.cell(row=row, column=min_col)
+        cell.border = Border(left=border_side, top=cell.border.top, right=cell.border.right, bottom=cell.border.bottom)
+        # Right edge
+        cell = ws.cell(row=row, column=max_col)
+        cell.border = Border(right=border_side, top=cell.border.top, left=cell.border.left, bottom=cell.border.bottom)
+
+def write_damages_section(ws, data):
+    """
+    Writes the Damages section (header, description, images) to the worksheet.
+    Applies a thick outer border to the entire damages table.
+    """
+    damage_description = data.get('damage_description')
+    damage_images = data.get('damage_images_urls', [])
+
+    if not (damage_description or damage_images):
+        return
+
+    start_row = ws.max_row + 2  # Add some space
+    current_row = start_row
+
+    # Styles
+    arial_10 = Font(name="Arial", size=10)
+    arial_11_bold = Font(name="Arial", size=11, bold=True)
+    arial_12_bold = Font(name="Arial", size=12, bold=True)
+    header_fill = PatternFill(start_color="8EAADB", end_color="8EAADB", fill_type="solid")
+    border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
+    # Damages header (A-L merged, centered, 12pt bold)
+    ws.merge_cells(f'A{current_row}:L{current_row}')
+    header_cell = ws[f'A{current_row}']
+    header_cell.value = "Damages"
+    header_cell.font = arial_12_bold
+    header_cell.fill = header_fill
+    header_cell.alignment = Alignment(horizontal='center', vertical='center')
+    header_cell.border = border
+    for col in range(1, 13):
+        ws[f'{get_column_letter(col)}{current_row}'].font = arial_12_bold
+        ws[f'{get_column_letter(col)}{current_row}'].border = border
+
+    # Description row
+    current_row += 1
+    if damage_description:
+        ws[f'A{current_row}'] = "Description:"
+        ws[f'A{current_row}'].font = arial_11_bold
+        ws[f'A{current_row}'].alignment = Alignment(horizontal='center', vertical='center')
+        ws[f'A{current_row}'].border = border
+        ws.merge_cells(f'B{current_row}:L{current_row}')
+        desc_cell = ws[f'B{current_row}']
+        desc_cell.value = damage_description
+        desc_cell.font = arial_10
+        desc_cell.alignment = Alignment(wrap_text=True, vertical='top')
+        desc_cell.border = border
+        autofit_row_height(ws, f'B{current_row}', damage_description, multiplier=1.5)
+        for col in range(2, 13):
+            ws[f'{get_column_letter(col)}{current_row}'].font = arial_10
+            ws[f'{get_column_letter(col)}{current_row}'].border = border
+
+    # Images section
+    if damage_images:
+        current_row += 1
+        img_start_row = current_row
+        img_end_row = current_row + 13
+
+        ws.merge_cells(f'A{img_start_row}:A{img_end_row}')
+        img_header_cell = ws[f'A{img_start_row}']
+        img_header_cell.value = "Images:"
+        img_header_cell.font = arial_11_bold
+        img_header_cell.alignment = Alignment(horizontal='center', vertical='center')
+        img_header_cell.border = border
+
+        ws.merge_cells(f'B{img_start_row}:L{img_end_row}')
+        img_cell = ws[f'B{img_start_row}']
+        img_cell.font = arial_10
+        img_cell.border = border
+        img_cell.alignment = Alignment(vertical='center')
+
+        for row in range(img_start_row, img_end_row + 1):
+            for col in range(1, 13):
+                cell = ws[f'{get_column_letter(col)}{row}']
+                cell.border = border
+                if col > 1:
+                    cell.font = arial_10
+
+        from .image_utils import create_collage_of_images
+        create_collage_of_images(
+            ws,
+            image_urls=[img['image'] if isinstance(img, dict) else img for img in damage_images],
+            start_cell=f'B{img_start_row}',
+            end_cell=f'L{img_end_row}'
+        )
+        current_row = img_end_row
+
+    end_row = current_row
+
+    # Apply thick outer border to the entire damages table
+    outer_side = Side(style="medium")
+    set_table_outer_border(ws, min_row=start_row, max_row=end_row, min_col=1, max_col=12, border_side=outer_side)
