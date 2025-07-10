@@ -15,7 +15,7 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell):
     n_images = len(image_urls)
     if n_images == 0:
         return
-    max_width, max_height = get_range_dimensions(ws, start_cell, end_cell)
+    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, 9)) # +9 to ensure we have enough space for the collage
     area_aspect_ratio = max_width / max_height
     best_layout = None
     best_size = 0
@@ -147,6 +147,10 @@ def transform_image(pil_img):
     output_img.seek(0)
     return output_img
 
+def add_rows_to_cell(cell, n):
+    col = ''.join(filter(str.isalpha, cell))
+    row = int(''.join(filter(str.isdigit, cell)))
+    return f"{col}{row + n}"
 
 def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.orientation = "portrait"
