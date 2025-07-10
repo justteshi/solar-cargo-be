@@ -32,6 +32,9 @@ class CustomUserAdmin(DefaultUserAdmin):
     list_display = ('username', 'get_full_name', 'get_role',)
     list_select_related = ('profile',)
 
+    def get_inline_instances(self, request, obj=None):
+        return [inline(self.model, self.admin_site) for inline in self.inlines]
+
     def get_full_name(self, obj):
         if obj.first_name and obj.last_name:
             return f"{obj.first_name} {obj.last_name}"

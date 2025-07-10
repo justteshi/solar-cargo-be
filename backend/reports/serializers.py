@@ -37,17 +37,34 @@ class DeliveryReportDamageImageSerializer(serializers.ModelSerializer):
         model = DeliveryReportDamageImage
         fields = ['image', 'uploaded_at']
 
+class OptionalImageListField(serializers.ListField):
+    child = serializers.ImageField()
+
+    def to_internal_value(self, data):
+        # if swagger/curl gave you "", None or a single file,
+        # DRF might wrap them differently. Ensure you have a list:
+        if not isinstance(data, list):
+            return []
+
+        # filter only file-like objects
+        files = [f for f in data if hasattr(f, 'read')]
+        if not files:
+            # no real files → treat as empty
+            return []
+
+        # now validate the real files list
+        return super().to_internal_value(files)
+
 class DeliveryReportSerializer(serializers.ModelSerializer):
     items_input = serializers.CharField(
         write_only=True,
         required=False,
         help_text='JSON array of items to create.',
-        default='[]',  # 👈 Swagger default input
+        default='[]',
     )
     items = serializers.SerializerMethodField(read_only=True)
 
-    additional_images_input = serializers.ListField(
-    child=serializers.ImageField(),
+    additional_images_input = OptionalImageListField(
     required=False,
     allow_null=True,
     allow_empty=True,
@@ -78,11 +95,12 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         required=False,
         allow_blank=True,
         allow_null=True,
+        default=None,
         help_text='Damage description.'
     )
-    damage_images_input = serializers.ListField(
-        child=serializers.ImageField(),
+    damage_images_input = OptionalImageListField(
         required=False,
+        allow_null=True,
         allow_empty=True,
         write_only=True,
         max_length=4,
@@ -221,10 +239,10 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         # Pop additional images files list
         additional_images_files = validated_data.pop('additional_images_input', [])
         damage_images = validated_data.pop('damage_images_input', [])
-        damage_desc = validated_data.pop('damage_description', None)
+        damage_desc = validated_data.get('damage_description', None)
 
         # Create DeliveryReport without extra fields
-        report = DeliveryReport.objects.create(**validated_data)
+        report = super().create(validated_data)
 
         # Create related items
         for item in items_data:

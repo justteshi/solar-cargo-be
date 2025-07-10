@@ -1,9 +1,9 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
+from django.core.exceptions import ValidationError
 from django_select2.forms import Select2MultipleWidget
 from django.contrib.auth.models import User
 from .models import UserProfile
-
 
 class CustomUserCreationForm(UserCreationForm):
     first_name = forms.CharField(required=True)
@@ -20,3 +20,9 @@ class UserProfileInlineForm(forms.ModelForm):
         widgets = {
             'locations': Select2MultipleWidget,
         }
+
+    def clean_locations(self):
+        locations = self.cleaned_data.get('locations')
+        if not locations:
+            raise ValidationError("Assign location for the user.")
+        return locations

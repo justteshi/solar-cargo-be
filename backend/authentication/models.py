@@ -1,8 +1,6 @@
 # authentication/models.py
 from django.conf import settings
 from django.db import models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 from reports.models import Location
 
 class UserProfile(models.Model):
@@ -16,4 +14,4 @@ class UserProfile(models.Model):
         related_name='profile'
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='basic')
-    locations = models.ManyToManyField(Location, blank=True)
+    locations = models.ManyToManyField(Location, blank= True)
