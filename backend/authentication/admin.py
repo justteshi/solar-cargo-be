@@ -2,11 +2,13 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as DefaultUserAdmin
 from .models import UserProfile
-from .forms import CustomUserCreationForm, UserProfileInlineForm
+from .forms import CustomUserCreationForm, UserProfileInlineForm, RequiredLocationsInlineFormSet
+
 
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     form = UserProfileInlineForm
+    formset = RequiredLocationsInlineFormSet
     can_delete = False
     verbose_name_plural = 'Profile'
     filter_horizontal = ('locations',)  # Nice UI for ManyToMany
@@ -31,6 +33,9 @@ class CustomUserAdmin(DefaultUserAdmin):
 
     list_display = ('username', 'get_full_name', 'get_role',)
     list_select_related = ('profile',)
+
+    def get_inline_instances(self, request, obj=None):
+        return [inline(self.model, self.admin_site) for inline in self.inlines]
 
     def get_full_name(self, obj):
         if obj.first_name and obj.last_name:

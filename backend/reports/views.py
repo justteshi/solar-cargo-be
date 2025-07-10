@@ -182,38 +182,48 @@ def download_pdf_report(request, report_id):
     filename = os.path.basename(file_path)
     return FileResponse(file, as_attachment=True, filename=filename)
 
+@extend_schema(
+    responses=LocationSerializer(many=True),
+    tags=["Locations"]
+)
 class MyLocationsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        assigned_locations = Location.objects.filter(
-            id__in=LocationAssignment.objects.filter(user=request.user).values_list('location_id', flat=True)
-        )
-        serializer = LocationSerializer(assigned_locations, many=True)
+        profile = getattr(request.user, 'profile', None)
+        if not profile:
+            return Response([], status=200)
+
+        locations = profile.locations.all()
+        serializer = LocationSerializer(locations, many=True)
         return Response(serializer.data)
 
 @extend_schema(
     parameters=[
-        OpenApiParameter(
-            name='location_id',
-            description='ID of the Location',
-            required=True,
-            type=int,
-            location=OpenApiParameter.PATH
-        )
+        OpenApiParameter(name="location_id",
+                         location=OpenApiParameter.PATH,
+                         required=True,
+                         type=int,
+                         description="Location ID")
     ],
-    responses={200: DeliveryReportSerializer(many=True)},
-    tags=["Delivery Reports"]
+    responses=DeliveryReportSerializer(many=True),
+    tags=["Locations"]
 )
-class ReportsByLocationView(APIView):
+class ReportsByLocationView(ListAPIView):
+    serializer_class = DeliveryReportSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = ReportsResultsSetPagination
 
-    def get(self, request, location_id):
-        location = get_object_or_404(Location, id=location_id)
+    def get_queryset(self):
+        user = self.request.user
+        profile = getattr(user, 'profile', None)
 
-        if not LocationAssignment.objects.filter(user=request.user, location=location).exists():
-            return Response({"detail": "Not authorized for this location."}, status=403)
+        if not profile:
+            return DeliveryReport.objects.none()
 
-        reports = DeliveryReport.objects.filter(location_logo=location)
-        serializer = DeliveryReportSerializer(reports, many=True)
-        return Response(serializer.data)
+        location = get_object_or_404(Location, id=self.kwargs['location_id'])
+
+        if location not in profile.locations.all():
+            return DeliveryReport.objects.none()
+
+        return DeliveryReport.objects.filter(location=location).order_by('-id')
