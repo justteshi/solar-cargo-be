@@ -63,13 +63,14 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
             # Get the username and location from the user ID
             user_id = report_data.get('user')
             report_data['user'] = get_username_from_id(user_id)
-            location_value = report_data.get('location')
-            if str(location_value).isdigit():
-                location_obj = Location.objects.filter(id=location_value).first()
+            location_id = report_data.get('location')
+            location_obj = Location.objects.filter(id=location_id).first()
+            if location_obj:
+                report_data['location'] = location_obj.name
+                report_data['client_logo'] = str(location_obj.logo.url) if location_obj.logo else None
             else:
-                location_obj = Location.objects.filter(name=location_value).first()
-            logo_url = str(location_obj.logo.url) if location_obj and location_obj.logo else None
-            report_data['client_logo'] = logo_url
+                report_data['location'] = ""
+                report_data['client_logo'] = None
             # Save Excel
             save_report_to_excel(report_data, file_path=excel_path)
             # Convert to PDF
