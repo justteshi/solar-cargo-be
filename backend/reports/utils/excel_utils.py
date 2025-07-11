@@ -1,19 +1,20 @@
 import io
 import logging
-
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image as PILImage, ImageOps
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.conf import settings
 from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from openpyxl.worksheet.pagebreak import Break
-from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
-from PIL import Image as PILImage, ImageOps
-from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page, get_range_dimensions, \
-    fetch_image_bytes, create_collage_of_images, insert_cmr_sheet, insert_delivery_slip_sheets
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.pagebreak import Break
+
+from .image_utils import get_range_dimensions, \
+    fetch_image_bytes, create_collage_of_images, insert_cmr_sheet, insert_images_in_single_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -172,22 +173,13 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     # Insert Delivery Slip images if available
     delivery_slip_images = data.get('delivery_slip_images_urls', [])
     if delivery_slip_images:
-        insert_delivery_slip_sheets(wb, delivery_slip_images)
+        insert_images_in_single_sheet(wb, delivery_slip_images, "Delivery Slips")
 
     # Add additional images if available
     additional_images = data.get('additional_images_urls', [])
-    for idx, img_data in enumerate(additional_images, start=1):
-        url = img_data.get('image')
-        if not url:
-            continue
-        try:
-            output_img = get_transposed_image_bytes(url)
-            img_ws = wb.create_sheet(title=f"Additional Image {idx}")
-            xl_img = XLImage(output_img)
-            img_ws.add_image(xl_img)
-            setup_image_worksheet_page(img_ws)
-        except Exception as e:
-            logger.error(f"Error adding additional image from {url}: {e}")
+    if additional_images:
+        insert_images_in_single_sheet(wb, additional_images, "Additional Images")
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
