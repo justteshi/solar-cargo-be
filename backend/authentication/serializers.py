@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
+from .models import UserProfile
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
@@ -28,3 +28,8 @@ class AccessSerializer(serializers.Serializer):
 
 class LogoutResponseSerializer(serializers.Serializer):
     detail = serializers.CharField()
+
+class ProfilePictureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ['profile_picture']
