@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
-    DeliveryReportSlipImage
+    DeliveryReportSlipImage, Supplier
 from drf_spectacular.utils import extend_schema_field
 import json
 
@@ -15,6 +15,10 @@ class ItemSerializer(serializers.ModelSerializer):
         model = Item
         fields = ['id', 'name']
 
+class SupplierAutocompleteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = ['id', 'name']
 
 class DeliveryReportItemSerializer(serializers.ModelSerializer):
     item = ItemSerializer()
@@ -141,6 +145,15 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    supplier = serializers.PrimaryKeyRelatedField(
+        source='supplier_fk',
+        queryset=Supplier.objects.all(),
+    )
+    supplier_name = serializers.CharField(
+        source='supplier_fk.name',
+        read_only=True
+    )
+
     class Meta:
         model = DeliveryReport
         fields = [
@@ -150,6 +163,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'location_name',
             'checking_company',
             'supplier',
+            'supplier_name',
             'delivery_slip_number',
             'logistic_company',
             'container_number',
@@ -271,6 +285,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         damage_images = validated_data.pop('damage_images_input', [])
         damage_desc = validated_data.get('damage_description', None)
         slips = validated_data.pop('delivery_slip_images_input', [])
+        supplier_obj = validated_data.pop('supplier_fk', None)
 
         # Create DeliveryReport without extra fields
         report = super().create(validated_data)
@@ -283,6 +298,10 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 item=item_obj,
                 quantity=item['quantity']
             )
+
+        if supplier_obj:
+            report.supplier_fk = supplier_obj
+            report.save(update_fields=['supplier_fk'])
 
         for img in slips:
             DeliveryReportSlipImage.objects.create(

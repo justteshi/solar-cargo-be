@@ -291,3 +291,55 @@ class RecognizePlatesView(APIView):
             "truck_plate": truck_plate,
             "trailer_plate": trailer_plate,
         })
+
+class SupplierByLocationAutocompleteView(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    generics.GenericAPIView
+):
+    """
+    GET  /api/locations/{location_id}/suppliers/?q=foo
+      -> връща JSON списък с доставчици за тази локация
+    POST /api/locations/{location_id}/suppliers/   { "name": "NewCo" }
+      -> създава нов доставчик и го асоциира с локацията
+    """
+    serializer_class = SupplierAutocompleteSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_location(self):
+        return get_object_or_404(Location, pk=self.kwargs['location_id'])
+
+    def get_queryset(self):
+        loc = self.get_location()
+        qs = Supplier.objects.filter(locations=loc)
+        q = self.request.query_params.get('q')
+        if q:
+            qs = qs.filter(name__icontains=q)
+        return qs.order_by('name')[:10]
+
+    def perform_create(self, serializer):
+        loc = self.get_location()
+        supplier = serializer.save()
+        # асоциираме доставчика към локацията
+        supplier.locations.add(loc)
+
+    def post(self, request, *args, **kwargs):
+        """
+        Ако има доставчик със същото име (case-ins), връща го вместо да създава нов.
+        """
+        name = request.data.get('name', '').strip()
+        if not name:
+            return Response(
+                {"name": ["This field is required."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        loc = self.get_location()
+        obj, created = Supplier.objects.get_or_create(name__iexact=name, defaults={'name': name})
+        # осигуряваме асоциация
+        obj.locations.add(loc)
+        serializer = self.get_serializer(obj)
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(serializer.data, status=status_code)
+
+    def get(self, request, *args, **kwargs):
+        return self.list(request, *args, **kwargs)

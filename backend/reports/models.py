@@ -14,6 +14,20 @@ class Location(models.Model):
     def __str__(self):
         return self.name
 
+class Supplier(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    locations = models.ManyToManyField(
+        Location,
+        related_name='suppliers',
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 class DeliveryReport(models.Model):
     location = models.ForeignKey(
         Location,
@@ -22,8 +36,17 @@ class DeliveryReport(models.Model):
         blank=True,
         related_name='delivery_reports'
     )
+
+    supplier = models.CharField(max_length=255, blank=True, null=True)
+    supplier_fk = models.ForeignKey(
+        Supplier,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery_reports_fk'
+    )
+
     checking_company = models.CharField(max_length=255)
-    supplier = models.CharField(max_length=255)
     delivery_slip_number = models.CharField(max_length=100)
     logistic_company = models.CharField(max_length=255)
     container_number = models.CharField(max_length=100)
