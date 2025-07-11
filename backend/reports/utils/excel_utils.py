@@ -1,18 +1,19 @@
 import io
+from io import BytesIO
 import logging
-
 from datetime import datetime
 from pathlib import Path
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.conf import settings
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage, ImageOps
-from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page, get_range_dimensions, \
-    fetch_image_bytes, create_collage_of_images, insert_cmr_delivery_slip_images
+from openpyxl.worksheet.pagebreak import Break
+
+from .image_utils import fetch_image_bytes, create_collage_of_images, insert_cmr_sheet, insert_images_in_single_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -78,26 +79,13 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
                 elif key == 'user':
                     ws[target_cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     ws = wb.active
+    # Insert client logo
     client_logo_url = data.get('client_logo')
     if client_logo_url:
-        logger.info(f"Attempting to insert client logo from URL: {client_logo_url}")
-        try:
-            max_width, max_height = get_range_dimensions(ws, "I3", "L7")
-            img_bytes = io.BytesIO(fetch_image_bytes(client_logo_url))
-            pil_img = PILImage.open(img_bytes).convert("RGBA")
-            pil_img = ImageOps.contain(pil_img, (max_width, max_height), method=PILImage.LANCZOS)
-            output_img = io.BytesIO()
-            pil_img.save(output_img, format="PNG")
-            output_img.seek(0)
-            xl_img = XLImage(output_img)
-            # Set anchor with offset
-            xl_img.anchor = "I3"
-            ws.add_image(xl_img)
-            logger.info("Client logo image inserted, aspect ratio preserved and centered in merged cell.")
-        except Exception as e:
-            logger.error(f"Error inserting client logo image: {e}")
+        insert_client_logo(ws, client_logo_url, cell="I3", end_cell="L7")
     else:
         logger.info("No client logo URL provided.")
+
     for field, row in STATUS_FIELDS.items():
         value = data.get(field, None)
         for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
@@ -132,7 +120,7 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         data.get('proof_of_delivery_image'),
     ]
     image_urls = [url for url in image_urls if url]
-    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell)
+    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=7)
     ws['J44'] = datetime.now().strftime("%Y-%m-%d")
     ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
     output = io.BytesIO()
@@ -156,24 +144,28 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws[comments_cell] = data['comments']
         ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
         autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+
+    # Insert a manual page break before the damages section
+    ws.row_breaks.append(Break(id=ws.max_row + 1))
+
+    # Create the Damages section if applicable
     write_damages_section(ws, data)
+
+    # Insert CMR image if available
     cmr_url = data.get('cmr_image')
-    delivery_slip_url = data.get('delivery_slip_image')
-    if cmr_url or delivery_slip_url:
-        insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
+    if cmr_url:
+        insert_cmr_sheet(ws, cmr_url)
+
+    # Insert Delivery Slip images if available
+    delivery_slip_images = data.get('delivery_slip_images_urls', [])
+    if delivery_slip_images:
+        insert_images_in_single_sheet(wb, delivery_slip_images, "Delivery Slips")
+
+    # Add additional images if available
     additional_images = data.get('additional_images_urls', [])
-    for idx, img_data in enumerate(additional_images, start=1):
-        url = img_data.get('image')
-        if not url:
-            continue
-        try:
-            output_img = get_transposed_image_bytes(url)
-            img_ws = wb.create_sheet(title=f"Additional Image {idx}")
-            xl_img = XLImage(output_img)
-            img_ws.add_image(xl_img)
-            setup_image_worksheet_page(img_ws)
-        except Exception as e:
-            logger.error(f"Error adding additional image from {url}: {e}")
+    if additional_images:
+        insert_images_in_single_sheet(wb, additional_images, "Additional Images")
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -285,6 +277,7 @@ def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", e
         abs_path = Path(settings.MEDIA_ROOT) / relative_path
     return str(relative_path), str(abs_path)
 
+
 def set_table_outer_border(ws, min_row, max_row, min_col, max_col, border_side):
     for col in range(min_col, max_col + 1):
         # Top edge
@@ -300,6 +293,7 @@ def set_table_outer_border(ws, min_row, max_row, min_col, max_col, border_side):
         # Right edge
         cell = ws.cell(row=row, column=max_col)
         cell.border = Border(right=border_side, top=cell.border.top, left=cell.border.left, bottom=cell.border.bottom)
+
 
 def write_damages_section(ws, data):
     """
@@ -382,13 +376,13 @@ def write_damages_section(ws, data):
                 cell.border = border
                 if col > 1:
                     cell.font = arial_10
-
-        from .image_utils import create_collage_of_images
+        row_offset = 1 if len(damage_images) > 3 else 7
         create_collage_of_images(
             ws,
             image_urls=[img['image'] if isinstance(img, dict) else img for img in damage_images],
             start_cell=f'B{img_start_row}',
-            end_cell=f'L{img_end_row}'
+            end_cell=f'L{img_end_row}',
+            row_offset=row_offset
         )
         current_row = img_end_row
 
@@ -397,3 +391,40 @@ def write_damages_section(ws, data):
     # Apply thick outer border to the entire damages table
     outer_side = Side(style="medium")
     set_table_outer_border(ws, min_row=start_row, max_row=end_row, min_col=1, max_col=12, border_side=outer_side)
+
+
+def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
+    # Calculate merged cell area in pixels
+    start_col = column_index_from_string(''.join(filter(str.isalpha, cell)))
+    start_row = int(''.join(filter(str.isdigit, cell)))
+    end_col = column_index_from_string(''.join(filter(str.isalpha, end_cell)))
+    end_row = int(''.join(filter(str.isdigit, end_cell)))
+
+    total_width = sum(
+        int((ws.column_dimensions[get_column_letter(col)].width or 8.43) * 6)
+        for col in range(start_col, end_col + 1)
+    )
+    total_height = sum(
+        int((ws.row_dimensions[row].height or 15) * 1.33)
+        for row in range(start_row, end_row + 1)
+    )
+
+    # Fetch and process image
+    img_bytes = BytesIO(fetch_image_bytes(image_url))
+    pil_img = PILImage.open(img_bytes)
+    pil_img = ImageOps.exif_transpose(pil_img)
+    pil_img = pil_img.convert("RGBA")
+    pil_img.thumbnail((total_width, total_height), PILImage.LANCZOS)
+
+    # Create a transparent canvas and paste the image centered
+    canvas = PILImage.new("RGBA", (total_width, total_height), (255, 255, 255, 0))
+    x = (total_width - pil_img.width) // 2
+    y = (total_height - pil_img.height) // 2
+    canvas.paste(pil_img, (x, y), pil_img)
+
+    output = BytesIO()
+    canvas.save(output, format="PNG")
+    output.seek(0)
+    xl_img = XLImage(output)
+    xl_img.anchor = cell
+    ws.add_image(xl_img)
