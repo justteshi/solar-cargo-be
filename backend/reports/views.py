@@ -1,4 +1,5 @@
 import os
+import tempfile
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from django.http import FileResponse, Http404
@@ -7,10 +8,12 @@ from django.conf import settings
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter, inline_serializer
 from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import serializers
+from rest_framework import status
 
 from authentication.permissions import IsAdmin
 
@@ -20,9 +23,17 @@ from .pagination import ReportsResultsSetPagination
 from .utils.main_utils import get_username_from_id
 from .utils.excel_utils import save_report_to_excel
 from .utils.pdf_utils import convert_excel_to_pdf
+from .utils.plate_recognition_utils import recognize_plate, PlateRecognitionError
 
-from .serializers import DeliveryReportSerializer, ItemSerializer, ItemAutocompleteFilterSerializer, LocationSerializer
+from .serializers import (
+    DeliveryReportSerializer,
+    ItemSerializer,
+    ItemAutocompleteFilterSerializer,
+    LocationSerializer
+)
 from rest_framework.permissions import IsAuthenticated, AllowAny
+
+
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -228,3 +239,71 @@ class ReportsByLocationView(ListAPIView):
             return DeliveryReport.objects.none()
 
         return DeliveryReport.objects.filter(location=location).order_by('-id')
+
+
+class RecognizePlatesView(APIView):
+    parser_classes = [MultiPartParser]
+
+    @extend_schema(
+        request=inline_serializer(
+            name='PlateRecognitionRequest',
+            fields={
+                'truck_plate_image': serializers.ImageField(),
+                'trailer_plate_image': serializers.ImageField(),
+            }
+        ),
+        responses={
+            200: inline_serializer(
+                name='PlateRecognitionResponse',
+                fields={
+                    'truck_plate': serializers.CharField(allow_null=True),
+                    'trailer_plate': serializers.CharField(allow_null=True),
+                }
+            ),
+            400: OpenApiResponse(description="Missing or invalid input"),
+            500: OpenApiResponse(description="Plate recognition error"),
+        },
+        tags=["Plate Recognition"],
+        description="Recognize truck and trailer license plates from uploaded images.",
+        examples=[
+            OpenApiExample(
+                name="Successful Recognition",
+                value={"truck_plate": "CA1234AC", "trailer_plate": "TX9876XY"},
+                response_only=True
+            )
+        ]
+    )
+    def post(self, request):
+        truck_image = request.FILES.get("truck_plate_image")
+        trailer_image = request.FILES.get("trailer_plate_image")
+
+        if not truck_image or not trailer_image:
+            return Response(
+                {"error": "Both truck_plate_image and trailer_plate_image are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        def process_uploaded_image(uploaded_file):
+            ext = os.path.splitext(uploaded_file.name)[1] or ".jpg"
+            with uploaded_file.open('rb') as f:
+                with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp_file:
+                    tmp_file.write(f.read())
+                    tmp_file.flush()
+                    return recognize_plate(tmp_file.name)
+
+        try:
+            truck_plate = process_uploaded_image(truck_image)
+        except PlateRecognitionError as e:
+            truck_plate = None
+            print(f"[Truck Plate Error] {e}")
+
+        try:
+            trailer_plate = process_uploaded_image(trailer_image)
+        except PlateRecognitionError as e:
+            trailer_plate = None
+            print(f"[Trailer Plate Error] {e}")
+
+        return Response({
+            "truck_plate": truck_plate,
+            "trailer_plate": trailer_plate,
+        })
