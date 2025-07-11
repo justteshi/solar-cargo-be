@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
 from django.db import models
-from django.contrib.auth.models import User
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
@@ -50,11 +49,6 @@ class DeliveryReport(models.Model):
 
     cmr_image = models.ImageField(
         upload_to='cmr/',
-        null=True,
-        blank=True)
-
-    delivery_slip_image = models.ImageField(
-        upload_to='delivery_slip/',
         null=True,
         blank=True)
 
@@ -120,6 +114,16 @@ class DeliveryReportDamageImage(models.Model):
     )
     image = models.ImageField(upload_to='damage_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+
+class DeliveryReportSlipImage(models.Model):
+    delivery_report = models.ForeignKey(
+        DeliveryReport,
+        on_delete=models.CASCADE,
+        related_name='slip_images'
+    )
+    image = models.ImageField(upload_to='delivery_slip/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
