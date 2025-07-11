@@ -15,7 +15,7 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell):
     n_images = len(image_urls)
     if n_images == 0:
         return
-    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, 9)) # +9 to ensure we have enough space for the collage
+    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, 8)) # +9 to ensure we have enough space for the collage
     area_aspect_ratio = max_width / max_height
     best_layout = None
     best_size = 0
@@ -65,23 +65,40 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell):
     img.anchor = start_cell
     ws.add_image(img)
 
-def insert_cmr_delivery_slip_images(ws, cmr_url=None, delivery_slip_url=None):
+def insert_cmr_sheet(ws, cmr_url=None):
     wb = ws.parent
-    image_data = [
-        ("CMR", cmr_url),
-        ("Delivery Slip", delivery_slip_url)
-    ]
-    for sheet_name, url in image_data:
+    if not cmr_url:
+        return
+    try:
+        img_ws = wb.create_sheet(title="CMR")
+        output_img = get_transposed_image_bytes(cmr_url)
+        xl_img = XLImage(output_img)
+        img_ws.add_image(xl_img)
+        setup_image_worksheet_page(img_ws)
+    except Exception as e:
+        logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
+
+def insert_delivery_slip_sheets(wb, delivery_slip_images):
+    for idx, img_obj in enumerate(delivery_slip_images, start=1):
+        url = img_obj.get('image') if isinstance(img_obj, dict) else img_obj
         if not url:
             continue
         try:
-            img_ws = wb.create_sheet(title=sheet_name)
             output_img = get_transposed_image_bytes(url)
+            img_ws = wb.create_sheet(title=f"Delivery Slip {idx}")
             xl_img = XLImage(output_img)
             img_ws.add_image(xl_img)
             setup_image_worksheet_page(img_ws)
         except Exception as e:
-            logger.error(f"Error inserting full-size image from {url} on new sheet: {e}")
+            logger.error(f"Error adding delivery slip image from {url}: {e}")
+
+def setup_image_worksheet_page(img_ws):
+    img_ws.page_setup.orientation = "portrait"
+    img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+    img_ws.page_setup.fitToWidth = 1
+    img_ws.page_setup.fitToHeight = 1
+    img_ws.page_setup.fitToPage = True
+    img_ws.page_setup.scale = None
 
 def get_range_dimensions(ws, start_cell, end_cell):
     from openpyxl.utils import get_column_letter, column_index_from_string
@@ -151,11 +168,3 @@ def add_rows_to_cell(cell, n):
     col = ''.join(filter(str.isalpha, cell))
     row = int(''.join(filter(str.isdigit, cell)))
     return f"{col}{row + n}"
-
-def setup_image_worksheet_page(img_ws):
-    img_ws.page_setup.orientation = "portrait"
-    img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
-    img_ws.page_setup.fitToWidth = 1
-    img_ws.page_setup.fitToHeight = 1
-    img_ws.page_setup.fitToPage = True
-    img_ws.page_setup.scale = None

@@ -8,11 +8,12 @@ from django.core.files.storage import default_storage
 from django.conf import settings
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+from openpyxl.worksheet.pagebreak import Break
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage, ImageOps
 from .image_utils import get_transposed_image_bytes, setup_image_worksheet_page, get_range_dimensions, \
-    fetch_image_bytes, create_collage_of_images, insert_cmr_delivery_slip_images
+    fetch_image_bytes, create_collage_of_images, insert_cmr_sheet, insert_delivery_slip_sheets
 
 logger = logging.getLogger(__name__)
 
@@ -156,11 +157,24 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws[comments_cell] = data['comments']
         ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
         autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+
+    # Insert a manual page break before the damages section
+    ws.row_breaks.append(Break(id=ws.max_row + 1))
+
+    # Create the Damages section if applicable
     write_damages_section(ws, data)
+
+    # Insert CMR image if available
     cmr_url = data.get('cmr_image')
-    delivery_slip_url = data.get('delivery_slip_image')
-    if cmr_url or delivery_slip_url:
-        insert_cmr_delivery_slip_images(ws, cmr_url, delivery_slip_url)
+    if cmr_url:
+        insert_cmr_sheet(ws, cmr_url)
+
+    # Insert Delivery Slip images if available
+    delivery_slip_images = data.get('delivery_slip_images_urls', [])
+    if delivery_slip_images:
+        insert_delivery_slip_sheets(wb, delivery_slip_images)
+
+    # Add additional images if available
     additional_images = data.get('additional_images_urls', [])
     for idx, img_data in enumerate(additional_images, start=1):
         url = img_data.get('image')
