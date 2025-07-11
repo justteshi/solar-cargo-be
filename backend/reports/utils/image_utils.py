@@ -12,11 +12,11 @@ from urllib.parse import urlparse
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-def create_collage_of_images(ws, image_urls, start_cell, end_cell):
+def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7):
     n_images = len(image_urls)
     if n_images == 0:
         return
-    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, 8))
+    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, row_offset))
     area_aspect_ratio = max_width / max_height
     best_layout = None
     best_size = 0
@@ -129,11 +129,16 @@ def insert_cmr_sheet(ws, cmr_url=None):
         return
     try:
         img_ws = wb.create_sheet(title="CMR")
+        img_ws["A1"] = "CMR Image:"
+        img_ws["A1"].font = Font(bold=True, size=12)
+        img_ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+        img_ws.row_dimensions[1].height = 20
         img_bytes = io.BytesIO(fetch_image_bytes(cmr_url))
         pil_img = PILImage.open(img_bytes)
         pil_img = ImageOps.exif_transpose(pil_img)
         output_img = transform_image(pil_img)
         xl_img = XLImage(output_img)
+        xl_img.anchor = "A2"
         img_ws.add_image(xl_img)
         setup_image_worksheet_page(img_ws)
     except Exception as e:
