@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage
+from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
+    DeliveryReportSlipImage
 from drf_spectacular.utils import extend_schema_field
 import json
 
@@ -35,6 +36,11 @@ class DeliveryReportImageSerializer(serializers.ModelSerializer):
 class DeliveryReportDamageImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeliveryReportDamageImage
+        fields = ['image', 'uploaded_at']
+
+class DeliveryReportSlipImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryReportSlipImage
         fields = ['image', 'uploaded_at']
 
 class OptionalImageListField(serializers.ListField):
@@ -112,12 +118,36 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    location = serializers.PrimaryKeyRelatedField(
+        queryset=Location.objects.all(),
+    )
+
+    location_name = serializers.CharField(
+        source='location.name',
+        read_only=True,
+        help_text='Name of the assigned location'
+    )
+
+    delivery_slip_images_input = OptionalImageListField(
+        child=serializers.ImageField(),
+        write_only=True,
+        required=True,
+        allow_empty=False,
+        help_text='At least one image file is required.'
+    )
+    delivery_slip_images_urls = DeliveryReportSlipImageSerializer(
+        source='slip_images',
+        many=True,
+        read_only=True
+    )
+
     class Meta:
         model = DeliveryReport
         fields = [
             # Step 1 report general info:
             'id',
             'location',
+            'location_name',
             'checking_company',
             'supplier',
             'delivery_slip_number',
@@ -150,7 +180,8 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'inspection_report_comment',
             # Step 4 images:
             'cmr_image',
-            'delivery_slip_image',
+            'delivery_slip_images_input',
+            'delivery_slip_images_urls',
             'additional_images_input',
             'additional_images_urls',
             'damage_description',
@@ -163,6 +194,11 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         # This returns a list of items with quantity
         report_items = DeliveryReportItem.objects.filter(delivery_report=obj)
         return DeliveryReportItemSerializer(report_items, many=True).data
+
+    def validate_delivery_slip_images_input(self, files):
+        if not files:
+            raise serializers.ValidationError("At least one image file is required.")
+        return files
 
     def validate_items_input(self, value):
         try:
@@ -219,12 +255,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 'cmr_image': "Provide cmr image."
             })
 
-        delivery_slip_image = data.get('delivery_slip_image')
-        if not delivery_slip_image:
-            raise serializers.ValidationError({
-                'delivery_slip_image': "Provide delivery slip image."
-            })
-
         if self.context['request'].method == 'POST':
             if 'items_input' not in self.initial_data:
                 raise serializers.ValidationError({
@@ -240,6 +270,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         additional_images_files = validated_data.pop('additional_images_input', [])
         damage_images = validated_data.pop('damage_images_input', [])
         damage_desc = validated_data.get('damage_description', None)
+        slips = validated_data.pop('delivery_slip_images_input', [])
 
         # Create DeliveryReport without extra fields
         report = super().create(validated_data)
@@ -251,6 +282,12 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 delivery_report=report,
                 item=item_obj,
                 quantity=item['quantity']
+            )
+
+        for img in slips:
+            DeliveryReportSlipImage.objects.create(
+                delivery_report=report,
+                image=img
             )
 
         # Create DeliveryReportImage instances for additional images
