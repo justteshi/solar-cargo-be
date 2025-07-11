@@ -195,22 +195,6 @@ def download_pdf_report(request, report_id):
     return FileResponse(file, as_attachment=True, filename=filename)
 
 @extend_schema(
-    responses=LocationSerializer(many=True),
-    tags=["Locations"]
-)
-class MyLocationsView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        profile = getattr(request.user, 'profile', None)
-        if not profile:
-            return Response([], status=200)
-
-        locations = profile.locations.all()
-        serializer = LocationSerializer(locations, many=True)
-        return Response(serializer.data)
-
-@extend_schema(
     parameters=[
         OpenApiParameter(name="location_id",
                          location=OpenApiParameter.PATH,
