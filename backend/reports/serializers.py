@@ -145,13 +145,20 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
-    supplier = serializers.PrimaryKeyRelatedField(
-        source='supplier_fk',
-        queryset=Supplier.objects.all(),
+    supplier_input = serializers.CharField(
+        write_only=True,
+        required=True,
+        help_text="Type a supplier name. If it exists (case-insensitive) we'll use it; otherwise we'll create it."
+    )
+    supplier = serializers.IntegerField(
+        source='supplier_fk.id',
+        read_only=True,
+        help_text="ID of the linked Supplier"
     )
     supplier_name = serializers.CharField(
         source='supplier_fk.name',
-        read_only=True
+        read_only=True,
+        help_text="Name of the linked Supplier"
     )
 
     class Meta:
@@ -162,6 +169,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'location',
             'location_name',
             'checking_company',
+            'supplier_input',
             'supplier',
             'supplier_name',
             'delivery_slip_number',
@@ -278,14 +286,22 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # Pop items input JSON (list of dicts)
+        raw = validated_data.pop('supplier_input').strip()
+        supplier_obj, created = Supplier.objects.get_or_create(
+            name__iexact=raw,
+            defaults={'name': raw}
+        )
+        location = validated_data.get('location')
+        if location:
+            supplier_obj.locations.add(location)
+
+        validated_data['supplier_fk'] = supplier_obj
+
         items_data = validated_data.pop('items_input', [])
-        # Pop additional images files list
         additional_images_files = validated_data.pop('additional_images_input', [])
         damage_images = validated_data.pop('damage_images_input', [])
         damage_desc = validated_data.get('damage_description', None)
         slips = validated_data.pop('delivery_slip_images_input', [])
-        supplier_obj = validated_data.pop('supplier_fk', None)
 
         # Create DeliveryReport without extra fields
         report = super().create(validated_data)
@@ -298,10 +314,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 item=item_obj,
                 quantity=item['quantity']
             )
-
-        if supplier_obj:
-            report.supplier_fk = supplier_obj
-            report.save(update_fields=['supplier_fk'])
 
         for img in slips:
             DeliveryReportSlipImage.objects.create(

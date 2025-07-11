@@ -9,7 +9,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter, inline_serializer
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import serializers
@@ -18,7 +18,7 @@ from rest_framework import status
 from authentication.permissions import IsAdmin
 
 from datetime import datetime
-from .models import DeliveryReport, Item, Location
+from .models import DeliveryReport, Item, Location, Supplier
 from .pagination import ReportsResultsSetPagination
 from .utils.main_utils import get_username_from_id
 from .utils.excel_utils import save_report_to_excel
@@ -29,7 +29,7 @@ from .serializers import (
     DeliveryReportSerializer,
     ItemSerializer,
     ItemAutocompleteFilterSerializer,
-    LocationSerializer
+    LocationSerializer, SupplierAutocompleteSerializer
 )
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
@@ -292,54 +292,40 @@ class RecognizePlatesView(APIView):
             "trailer_plate": trailer_plate,
         })
 
-class SupplierByLocationAutocompleteView(
-    mixins.ListModelMixin,
-    mixins.CreateModelMixin,
-    generics.GenericAPIView
-):
-    """
-    GET  /api/locations/{location_id}/suppliers/?q=foo
-      -> връща JSON списък с доставчици за тази локация
-    POST /api/locations/{location_id}/suppliers/   { "name": "NewCo" }
-      -> създава нов доставчик и го асоциира с локацията
-    """
+class SupplierAutocompleteView(ListCreateAPIView):
     serializer_class = SupplierAutocompleteSerializer
     permission_classes = [IsAuthenticated]
 
-    def get_location(self):
-        return get_object_or_404(Location, pk=self.kwargs['location_id'])
+    @extend_schema(
+        tags=["Suppliers"],
+        parameters=[
+            OpenApiParameter(
+                name="location_id",
+                description="Location identifier",
+                required=True,
+                location=OpenApiParameter.PATH,
+                type=int
+            ),
+            OpenApiParameter(
+                name="q",
+                description="Search term",
+                required=False,
+                location=OpenApiParameter.QUERY,
+                type=str
+            ),
+        ],
+        responses={200: SupplierAutocompleteSerializer(many=True)},
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        loc = self.get_location()
+        loc = Location.objects.filter(pk=self.kwargs['location_id']).first()
+        if not loc:
+            return Supplier.objects.none()
+
         qs = Supplier.objects.filter(locations=loc)
         q = self.request.query_params.get('q')
         if q:
             qs = qs.filter(name__icontains=q)
         return qs.order_by('name')[:10]
-
-    def perform_create(self, serializer):
-        loc = self.get_location()
-        supplier = serializer.save()
-        # асоциираме доставчика към локацията
-        supplier.locations.add(loc)
-
-    def post(self, request, *args, **kwargs):
-        """
-        Ако има доставчик със същото име (case-ins), връща го вместо да създава нов.
-        """
-        name = request.data.get('name', '').strip()
-        if not name:
-            return Response(
-                {"name": ["This field is required."]},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        loc = self.get_location()
-        obj, created = Supplier.objects.get_or_create(name__iexact=name, defaults={'name': name})
-        # осигуряваме асоциация
-        obj.locations.add(loc)
-        serializer = self.get_serializer(obj)
-        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
-        return Response(serializer.data, status=status_code)
-
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
