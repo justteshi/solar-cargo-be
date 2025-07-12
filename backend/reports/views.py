@@ -39,7 +39,7 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
     serializer_class = DeliveryReportSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated]
     pagination_class = ReportsResultsSetPagination
     http_method_names = ['get', 'post', 'put', 'patch']
 
