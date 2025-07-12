@@ -411,6 +411,9 @@ def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
 
     # Fetch and process image
     img_bytes = BytesIO(fetch_image_bytes(image_url))
+    if not img_bytes.getbuffer().nbytes:
+        logger.warning(f"Client logo not found or empty: {image_url}")
+        return
     pil_img = PILImage.open(img_bytes)
     pil_img = ImageOps.exif_transpose(pil_img)
     pil_img = pil_img.convert("RGBA")

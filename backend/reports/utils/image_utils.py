@@ -125,21 +125,41 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
 
 def insert_cmr_sheet(ws, cmr_url=None):
     wb = ws.parent
+    max_page_height = 1060
+    descriptor_height = 20
+    max_width = 700
+    image_height = max_page_height - descriptor_height
     if not cmr_url:
         return
     try:
         img_ws = wb.create_sheet(title="CMR")
+        img_ws.page_margins.top = 0
+        img_ws.page_margins.bottom = 0
+        img_ws.page_margins.left = 0.2
+        img_ws.page_margins.right = 0.2
         img_ws["A1"] = "CMR Image:"
         img_ws["A1"].font = Font(bold=True, size=12)
         img_ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
-        img_ws.row_dimensions[1].height = 20
+        img_ws.row_dimensions[1].height = descriptor_height
+
         img_bytes = io.BytesIO(fetch_image_bytes(cmr_url))
         pil_img = PILImage.open(img_bytes)
         pil_img = ImageOps.exif_transpose(pil_img)
-        output_img = transform_image(pil_img)
+        pil_img = pil_img.convert("RGBA")
+
+        # Resize logic similar to insert_images_in_single_sheet
+        ratio = min(max_width / pil_img.width, image_height / pil_img.height, 1)
+        new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
+        pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
+
+        output_img = io.BytesIO()
+        pil_img.save(output_img, format="PNG")
+        output_img.seek(0)
         xl_img = XLImage(output_img)
         xl_img.anchor = "A2"
         img_ws.add_image(xl_img)
+        img_row_height = new_size[1] * 0.75
+        img_ws.row_dimensions[2].height = img_row_height
         setup_image_worksheet_page(img_ws)
     except Exception as e:
         logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
