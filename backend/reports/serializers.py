@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
-    DeliveryReportSlipImage
+    DeliveryReportSlipImage, Supplier
 from drf_spectacular.utils import extend_schema_field
 import json
 
@@ -15,6 +15,10 @@ class ItemSerializer(serializers.ModelSerializer):
         model = Item
         fields = ['id', 'name']
 
+class SupplierAutocompleteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = ['id', 'name']
 
 class DeliveryReportItemSerializer(serializers.ModelSerializer):
     item = ItemSerializer()
@@ -141,6 +145,22 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         read_only=True
     )
 
+    supplier_input = serializers.CharField(
+        write_only=True,
+        required=True,
+        help_text="Type a supplier name. If it exists (case-insensitive) we'll use it; otherwise we'll create it."
+    )
+    supplier = serializers.IntegerField(
+        source='supplier_fk.id',
+        read_only=True,
+        help_text="ID of the linked Supplier"
+    )
+    supplier_name = serializers.CharField(
+        source='supplier_fk.name',
+        read_only=True,
+        help_text="Name of the linked Supplier"
+    )
+
     class Meta:
         model = DeliveryReport
         fields = [
@@ -149,7 +169,9 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'location',
             'location_name',
             'checking_company',
+            'supplier_input',
             'supplier',
+            'supplier_name',
             'delivery_slip_number',
             'logistic_company',
             'container_number',
@@ -264,9 +286,18 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # Pop items input JSON (list of dicts)
+        raw = validated_data.pop('supplier_input').strip()
+        supplier_obj, created = Supplier.objects.get_or_create(
+            name__iexact=raw,
+            defaults={'name': raw}
+        )
+        location = validated_data.get('location')
+        if location:
+            supplier_obj.locations.add(location)
+
+        validated_data['supplier_fk'] = supplier_obj
+
         items_data = validated_data.pop('items_input', [])
-        # Pop additional images files list
         additional_images_files = validated_data.pop('additional_images_input', [])
         damage_images = validated_data.pop('damage_images_input', [])
         damage_desc = validated_data.get('damage_description', None)

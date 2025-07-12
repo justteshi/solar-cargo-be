@@ -9,7 +9,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter, inline_serializer
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework import serializers
@@ -18,7 +18,7 @@ from rest_framework import status
 from authentication.permissions import IsAdmin
 
 from datetime import datetime
-from .models import DeliveryReport, Item, Location
+from .models import DeliveryReport, Item, Location, Supplier
 from .pagination import ReportsResultsSetPagination
 from .utils.main_utils import get_username_from_id
 from .utils.excel_utils import save_report_to_excel
@@ -29,7 +29,7 @@ from .serializers import (
     DeliveryReportSerializer,
     ItemSerializer,
     ItemAutocompleteFilterSerializer,
-    LocationSerializer
+    LocationSerializer, SupplierAutocompleteSerializer
 )
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
@@ -39,7 +39,7 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
     serializer_class = DeliveryReportSerializer
     parser_classes = (MultiPartParser, FormParser)
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated]
     pagination_class = ReportsResultsSetPagination
     http_method_names = ['get', 'post', 'put', 'patch']
 
@@ -291,3 +291,41 @@ class RecognizePlatesView(APIView):
             "truck_plate": truck_plate,
             "trailer_plate": trailer_plate,
         })
+
+class SupplierAutocompleteView(ListCreateAPIView):
+    serializer_class = SupplierAutocompleteSerializer
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Suppliers"],
+        parameters=[
+            OpenApiParameter(
+                name="location_id",
+                description="Location identifier",
+                required=True,
+                location=OpenApiParameter.PATH,
+                type=int
+            ),
+            OpenApiParameter(
+                name="q",
+                description="Search term",
+                required=False,
+                location=OpenApiParameter.QUERY,
+                type=str
+            ),
+        ],
+        responses={200: SupplierAutocompleteSerializer(many=True)},
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        loc = Location.objects.filter(pk=self.kwargs['location_id']).first()
+        if not loc:
+            return Supplier.objects.none()
+
+        qs = Supplier.objects.filter(locations=loc)
+        q = self.request.query_params.get('q')
+        if q:
+            qs = qs.filter(name__icontains=q)
+        return qs.order_by('name')[:10]
