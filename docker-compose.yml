@@ -5,7 +5,7 @@ services:
       sh -c "export PYTHONPATH=/code/backend &&
              python /wait-for-db.py &&
              if [ \"$DJANGO_ENV\" = 'prod' ]; then
-               gunicorn config.wsgi:application --bind 0.0.0.0:5000 --timeout 180 --limit-request-line 16384 --limit-request-field_size 16384;
+               gunicorn config.wsgi:application --bind 0.0.0.0:5000 --timeout 180 --limit-request-line 65536 --limit-request-field_size 65536;
              else
                python backend/manage.py runserver 0.0.0.0:5000;
              fi"

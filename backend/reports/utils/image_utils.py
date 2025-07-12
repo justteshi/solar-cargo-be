@@ -5,17 +5,18 @@ import logging
 from PIL import Image as PILImage
 from PIL import ImageOps
 from openpyxl.drawing.image import Image as XLImage
+from openpyxl.worksheet.pagebreak import Break
+from openpyxl.styles import Font, Alignment
 import boto3
 from urllib.parse import urlparse
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
-
-def create_collage_of_images(ws, image_urls, start_cell, end_cell):
+def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7):
     n_images = len(image_urls)
     if n_images == 0:
         return
-    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, 9)) # +9 to ensure we have enough space for the collage
+    max_width, max_height = get_range_dimensions(ws, start_cell, add_rows_to_cell(end_cell, row_offset))
     area_aspect_ratio = max_width / max_height
     best_layout = None
     best_size = 0
@@ -25,35 +26,21 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell):
         cell_height = max_height // rows
         size = min(cell_width, cell_height)
         grid_aspect_ratio = (cols * cell_width) / (rows * cell_height)
-        if size > best_size or (size == best_size and abs(grid_aspect_ratio - area_aspect_ratio) < abs((best_layout or (0, 0, 0))[2] - area_aspect_ratio)):
+        if size > best_size or (size == best_size and abs(grid_aspect_ratio - area_aspect_ratio) < abs(
+                (best_layout or (0, 0, 0))[2] - area_aspect_ratio)):
             best_layout = (cols, rows, grid_aspect_ratio)
             best_size = size
     cols, rows, _ = best_layout
     cell_width = max_width // cols
     cell_height = max_height // rows
     last_row_images = n_images % cols if n_images % cols != 0 else cols
-    used_width = cell_width * (cols if n_images > cols else n_images) if n_images > (rows - 1) * cols else cell_width * last_row_images
+    used_width = cell_width * (cols if n_images > cols else n_images) if n_images > (
+            rows - 1) * cols else cell_width * last_row_images
     used_height = cell_height * (rows - 1) + (cell_height if last_row_images else 0)
     collage = PILImage.new("RGBA", (cell_width * cols, cell_height * rows), (255, 255, 255, 0))
 
-    def fetch_and_process_image(url):
-        try:
-            img_bytes = io.BytesIO(fetch_image_bytes(url))
-            pil_img = PILImage.open(img_bytes)
-            pil_img = ImageOps.exif_transpose(pil_img)
-            # Use transform_image to get optimal format
-            transformed_bytes = transform_image(pil_img)
-            pil_img = PILImage.open(transformed_bytes)
-            pil_img.thumbnail((cell_width, cell_height), PILImage.LANCZOS)
-            # Always convert to RGBA for pasting with alpha
-            pil_img = pil_img.convert("RGBA")
-            return pil_img
-        except Exception as e:
-            logger.error(f"Error processing image from {url}: {e}")
-            return None
-
     for idx, url in enumerate(image_urls):
-        pil_img = fetch_and_process_image(url)
+        pil_img = fetch_and_process_image(url, cell_width, cell_height)
         if pil_img:
             x = (idx % cols) * cell_width + (cell_width - pil_img.width) // 2
             y = (idx // cols) * cell_height + (cell_height - pil_img.height) // 2
@@ -65,23 +52,105 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell):
     img.anchor = start_cell
     ws.add_image(img)
 
-def insert_cmr_delivery_slip_images(ws, cmr_url=None, delivery_slip_url=None):
-    wb = ws.parent
-    image_data = [
-        ("CMR", cmr_url),
-        ("Delivery Slip", delivery_slip_url)
-    ]
-    for sheet_name, url in image_data:
+def fetch_and_process_image(url, cell_width, cell_height):
+    try:
+        img_bytes = io.BytesIO(fetch_image_bytes(url))
+        pil_img = PILImage.open(img_bytes)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        transformed_bytes = transform_image(pil_img)
+        pil_img = PILImage.open(transformed_bytes)
+        pil_img.thumbnail((cell_width, cell_height), PILImage.LANCZOS)
+        pil_img = pil_img.convert("RGBA")
+        return pil_img
+    except Exception as e:
+        logger.error(f"Error processing image from {url}: {e}")
+        return None
+
+def insert_images_in_single_sheet(wb, images, sheet_title):
+    """
+    Insert all images into a single sheet, one below the other.
+    """
+    img_ws = wb.create_sheet(title=sheet_title)
+    img_ws.page_margins.top = 0
+    img_ws.page_margins.bottom = 0
+    img_ws.page_margins.left = 0.2
+    img_ws.page_margins.right = 0.2
+
+    row = 1
+    max_page_height = 1060
+    descriptor_height = 20
+    max_width = 700
+    image_height = max_page_height - descriptor_height
+
+    for idx, img_obj in enumerate(images):
+        if idx > 0:
+            img_ws.insert_rows(row)
+            # Do NOT set row height for the blank row; let Excel use default
+            img_ws.row_breaks.append(Break(id=row))
+            row += 1
+
+        # Descriptor row
+        label = f"{sheet_title[:-1]} {idx + 1}"
+        img_ws[f'A{row}'] = label
+        img_ws[f'A{row}'].font = Font(bold=True, size=12)
+        img_ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
+        img_ws.row_dimensions[row].height = descriptor_height
+        row += 1
+
+        url = img_obj.get('image') if isinstance(img_obj, dict) else img_obj
         if not url:
             continue
         try:
-            img_ws = wb.create_sheet(title=sheet_name)
-            output_img = get_transposed_image_bytes(url)
+            img_bytes = io.BytesIO(fetch_image_bytes(url))
+            pil_img = PILImage.open(img_bytes)
+            pil_img = ImageOps.exif_transpose(pil_img)
+            pil_img = pil_img.convert("RGBA")
+            ratio = min(max_width / pil_img.width, image_height / pil_img.height, 1)
+            new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
+            pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
+            output_img = io.BytesIO()
+            pil_img.save(output_img, format="PNG")
+            output_img.seek(0)
             xl_img = XLImage(output_img)
+            cell = f'A{row}'
+            xl_img.anchor = cell
             img_ws.add_image(xl_img)
-            setup_image_worksheet_page(img_ws)
+            # Set row height to actual image height in points (1 px ≈ 0.75 pt)
+            img_row_height = new_size[1] * 0.75
+            img_ws.row_dimensions[row].height = img_row_height
+            row += 1
         except Exception as e:
-            logger.error(f"Error inserting full-size image from {url} on new sheet: {e}")
+            logger.error(f"Error adding image from {url}: {e}")
+    setup_image_worksheet_page(img_ws)
+
+def insert_cmr_sheet(ws, cmr_url=None):
+    wb = ws.parent
+    if not cmr_url:
+        return
+    try:
+        img_ws = wb.create_sheet(title="CMR")
+        img_ws["A1"] = "CMR Image:"
+        img_ws["A1"].font = Font(bold=True, size=12)
+        img_ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+        img_ws.row_dimensions[1].height = 20
+        img_bytes = io.BytesIO(fetch_image_bytes(cmr_url))
+        pil_img = PILImage.open(img_bytes)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        output_img = transform_image(pil_img)
+        xl_img = XLImage(output_img)
+        xl_img.anchor = "A2"
+        img_ws.add_image(xl_img)
+        setup_image_worksheet_page(img_ws)
+    except Exception as e:
+        logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
+
+def setup_image_worksheet_page(img_ws):
+    img_ws.page_setup.orientation = "portrait"
+    img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
+    img_ws.page_setup.fitToPage = False  # Disable fit to page so page breaks work
+    img_ws.page_setup.fitToWidth = None
+    img_ws.page_setup.fitToHeight = None
+    img_ws.page_setup.scale = None
 
 def get_range_dimensions(ws, start_cell, end_cell):
     from openpyxl.utils import get_column_letter, column_index_from_string
@@ -124,17 +193,6 @@ def fetch_image_bytes(url):
         response.raise_for_status()
         return response.content
 
-def get_transposed_image_bytes(url):
-    """
-    Fetch image bytes from a URL, keep correct orientation, convert to RGBA, and return as BytesIO.
-    """
-    img_bytes = io.BytesIO(fetch_image_bytes(url))
-    pil_img = PILImage.open(img_bytes)
-    pil_img = ImageOps.exif_transpose(pil_img)
-    output_img = transform_image(pil_img)
-    return output_img
-
-
 def transform_image(pil_img):
     output_img = io.BytesIO()
     # Save as JPEG if no alpha, else PNG
@@ -151,11 +209,3 @@ def add_rows_to_cell(cell, n):
     col = ''.join(filter(str.isalpha, cell))
     row = int(''.join(filter(str.isdigit, cell)))
     return f"{col}{row + n}"
-
-def setup_image_worksheet_page(img_ws):
-    img_ws.page_setup.orientation = "portrait"
-    img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
-    img_ws.page_setup.fitToWidth = 1
-    img_ws.page_setup.fitToHeight = 1
-    img_ws.page_setup.fitToPage = True
-    img_ws.page_setup.scale = None
