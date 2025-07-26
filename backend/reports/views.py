@@ -197,6 +197,7 @@ def download_pdf_report(request, report_id):
     filename = os.path.basename(file_path)
     return FileResponse(file, as_attachment=True, filename=filename)
 
+
 def encode_file(file_field, filename):
     """
     Encode a file into base64 format.
@@ -212,6 +213,71 @@ def encode_file(file_field, filename):
         logging.error(f"Error encoding file {filename}: {e}")
         return None
 
+
+@extend_schema(
+    operation_id="download_delivery_report_media_base64",
+    summary="Download delivery report media as base64",
+    tags=["Download Report Media"],
+    description="Download all media files (images) associated with a delivery report as base64-encoded data",
+    parameters=[
+        OpenApiParameter(
+            name="report_id",
+            description="ID of the delivery report",
+            required=True,
+            type=int,
+            location=OpenApiParameter.PATH,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=inline_serializer(
+                name='MediaDownloadResponse',
+                fields={
+                    'media_data': serializers.DictField(
+                        child=serializers.ListField(
+                            child=inline_serializer(
+                                name='MediaFile',
+                                fields={
+                                    'filename': serializers.CharField(),
+                                    'data': serializers.CharField(help_text="Base64 encoded file data"),
+                                    'content_type': serializers.CharField(),
+                                }
+                            )
+                        ),
+                        help_text="Dictionary with media categories as keys and lists of base64-encoded files as values"
+                    ),
+                    'total_files': serializers.IntegerField(help_text="Total number of files included"),
+                }
+            ),
+            description="Base64-encoded media files organized by category",
+        ),
+        404: OpenApiResponse(description="Delivery report not found"),
+    },
+    examples=[
+        OpenApiExample(
+            "Successful response",
+            value={
+                "media_data": {
+                    "license_plates": [
+                        {
+                            "filename": "truck_license.jpg",
+                            "data": "/9j/4AAQSkZJRgABAQEAYABgAAD...",
+                            "content_type": "image/jpeg"
+                        }
+                    ],
+                    "damage_images": [
+                        {
+                            "filename": "damage_001.png",
+                            "data": "iVBORw0KGgoAAAANSUhEUgAA...",
+                            "content_type": "image/png"
+                        }
+                    ]
+                },
+                "total_files": 2
+            }
+        )
+    ]
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def download_report_media(request, report_id):
