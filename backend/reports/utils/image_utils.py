@@ -13,6 +13,7 @@ from django.conf import settings
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import functools
+from .file_validators import validate_image_file, FileValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -77,12 +78,31 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7)
 def fetch_and_process_image(url, cell_width, cell_height):
     try:
         img_bytes = io.BytesIO(fetch_image_bytes(url))
+        if not img_bytes.getbuffer().nbytes:
+            return None
+            # Validate the fetched image content
+            try:
+                # Create a mock file object for validation
+                img_bytes.seek(0)
+                content = img_bytes.read(8192)
+                img_bytes.seek(0)
+
+                # Basic validation of image content
+                if not _is_valid_image_content(content):
+                    logger.warning(f"Invalid image content from {url}")
+                    return None
+
+            except Exception as e:
+                logger.error(f"Image validation failed for {url}: {e}")
+                return None
         pil_img = PILImage.open(img_bytes)
         pil_img = ImageOps.exif_transpose(pil_img)
-        transformed_bytes = transform_image(pil_img)
-        pil_img = PILImage.open(transformed_bytes)
-        pil_img.thumbnail((cell_width, cell_height), PILImage.LANCZOS)
         pil_img = pil_img.convert("RGBA")
+
+        ratio = min(cell_width / pil_img.width, cell_height / pil_img.height, 1)
+        new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
+        pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
+
         return pil_img
     except Exception as e:
         logger.error(f"Error processing image from {url}: {e}")
@@ -185,6 +205,33 @@ def insert_cmr_sheet(ws, cmr_url=None):
         logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
 
 
+def _is_valid_image_content(content):
+    """
+    Basic validation of image file content.
+    """
+    if len(content) < 10:
+        return False
+
+    # Check for common image signatures
+    image_signatures = [
+        b'\xff\xd8\xff',  # JPEG
+        b'\x89\x50\x4e\x47',  # PNG
+        b'GIF87a', b'GIF89a',  # GIF
+        b'BM',  # BMP
+        b'RIFF',  # WEBP (partial)
+        b'II*\x00', b'MM\x00*'  # TIFF
+    ]
+
+    for sig in image_signatures:
+        if content.startswith(sig):
+            return True
+
+    # Special case for WEBP
+    if b'RIFF' in content[:12] and b'WEBP' in content[:12]:
+        return True
+
+    return False
+
 def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.orientation = "portrait"
     img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
@@ -215,27 +262,70 @@ def fetch_image_bytes(url):
     """
     Fetch image bytes from S3 if the URL is an S3 object, else use requests.
     """
-    if url.startswith("s3://"):
-        s3 = boto3.client("s3")
-        parsed = urlparse(url)
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        return obj["Body"].read()
-    elif settings.AWS_STORAGE_BUCKET_NAME in url:
-        # Handle S3 HTTP(S) URLs (e.g., https://bucket.s3.amazonaws.com/key)
-        s3 = boto3.client("s3")
-        parsed = urlparse(url)
-        bucket = parsed.netloc.split(".")[0]
-        key = parsed.path.lstrip("/")
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        return obj["Body"].read()
-    else:
-        # Fallback to requests for external URLs
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.content
+    try:
+        if url.startswith("s3://"):
+            s3 = boto3.client("s3")
+            parsed = urlparse(url)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            content = obj["Body"].read()
+        elif settings.AWS_STORAGE_BUCKET_NAME in url:
+            s3 = boto3.client("s3")
+            parsed = urlparse(url)
+            bucket = parsed.netloc.split(".")[0]
+            key = parsed.path.lstrip("/")
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            content = obj["Body"].read()
+        else:
+            response = requests.get(url, timeout=10, stream=True)
+            response.raise_for_status()
 
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if not content_type.startswith('image/'):
+                logger.warning(f"Invalid content type for image URL {url}: {content_type}")
+                return b''
+
+            content = response.content
+
+        # Validate downloaded content is actually an image
+        if not _is_valid_image_content(content):
+            logger.warning(f"Downloaded content from {url} is not a valid image")
+            return b''
+
+        return content
+
+    except Exception as e:
+        logger.error(f"Error fetching image from {url}: {e}")
+        return b''
+
+def _is_valid_image_content(content):
+    """
+    Basic validation of image file content.
+    """
+    if len(content) < 10:
+        return False
+
+    # Check for common image signatures
+    image_signatures = [
+        b'\xff\xd8\xff',  # JPEG
+        b'\x89\x50\x4e\x47',  # PNG
+        b'GIF87a', b'GIF89a',  # GIF
+        b'BM',  # BMP
+        b'RIFF',  # WEBP (partial)
+        b'II*\x00', b'MM\x00*'  # TIFF
+    ]
+
+    for sig in image_signatures:
+        if content.startswith(sig):
+            return True
+
+    # Special case for WEBP - check for both RIFF and WEBP signatures
+    if b'RIFF' in content[:12] and b'WEBP' in content[:12]:
+        return True
+
+    return False
 
 def transform_image(pil_img):
     output_img = io.BytesIO()

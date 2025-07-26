@@ -235,7 +235,7 @@ class ReportsByLocationView(ListAPIView):
 
 class RecognizePlatesView(APIView):
     parser_classes = [MultiPartParser]
-
+    permission_classes = [IsAuthenticated]
     @extend_schema(
         request=inline_serializer(
             name='PlateRecognitionRequest',
@@ -274,31 +274,47 @@ class RecognizePlatesView(APIView):
                 {"error": "Both truck_plate_image and trailer_plate_image are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        # Validate uploaded files for security
+        try:
+            validate_image_file(truck_image)
+            validate_image_file(trailer_image)
+        except FileValidationError as e:
+            return Response(
+                {"error": f"File validation failed: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         def process_uploaded_image(uploaded_file):
             ext = os.path.splitext(uploaded_file.name)[1] or ".jpg"
-            with uploaded_file.open('rb') as f:
-                with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp_file:
-                    tmp_file.write(f.read())
-                    tmp_file.flush()
-                    return recognize_plate(tmp_file.name)
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                with uploaded_file.open('rb') as f:
+                    temp_file.write(f.read())
+                temp_file_path = temp_file.name
+
+            try:
+                return recognize_plate(temp_file_path)
+            finally:
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
 
         try:
             truck_plate = process_uploaded_image(truck_image)
-        except PlateRecognitionError as e:
-            truck_plate = None
-            print(f"[Truck Plate Error] {e}")
-
-        try:
             trailer_plate = process_uploaded_image(trailer_image)
-        except PlateRecognitionError as e:
-            trailer_plate = None
-            print(f"[Trailer Plate Error] {e}")
 
-        return Response({
-            "truck_plate": truck_plate,
-            "trailer_plate": trailer_plate,
-        })
+            return Response({
+                "truck_plate": truck_plate,
+                "trailer_plate": trailer_plate
+            })
+        except PlateRecognitionError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Unexpected error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class SupplierAutocompleteView(ListCreateAPIView):
     serializer_class = SupplierAutocompleteSerializer
