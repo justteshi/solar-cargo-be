@@ -34,7 +34,9 @@ from .serializers import (
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from .services import ReportFileService, ReportDataService, ReportUpdateService
 
+import logging
 
+logger = logging.getLogger(__name__)
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')

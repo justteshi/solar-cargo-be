@@ -51,8 +51,14 @@ COMMENT_FIELD_MAP = {
 }
 
 
-def save_report_to_excel(data, file_path=None, template_path='delivery_report_template.xlsx'):
-    relative_path, abs_path = get_relative_and_abs_path(file_path, subdir="delivery_reports_excel", ext="xlsx")
+def save_report_to_excel(data, file_path=None, template_path=None):
+    if template_path is None:
+        template_path = settings.REPORT_PATHS['TEMPLATE_PATH']
+    relative_path, abs_path = get_relative_and_abs_path(
+        file_path,
+        subdir=settings.REPORT_PATHS['EXCEL_SUBDIR'],
+        ext="xlsx"
+    )
     items = data.get("items", [])
     extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
 
@@ -391,14 +397,22 @@ def autofit_row_height(ws, cell, text, multiplier=14):
 
 
 def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", ext="xlsx"):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     if file_path:
-        abs_path = Path(file_path)
-        relative_path = abs_path.relative_to(settings.MEDIA_ROOT)
+        # If file_path is provided, use it as relative path
+        if isinstance(file_path, Path):
+            relative_path = str(file_path)
+        else:
+            relative_path = file_path
+        # For S3, we don't need absolute paths
+        abs_path = relative_path
     else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        relative_path = Path(subdir) / f"delivery_report_{timestamp}.{ext}"
-        abs_path = Path(settings.MEDIA_ROOT) / relative_path
-    return str(relative_path), str(abs_path)
+        # Generate new filename
+        relative_path = f"{subdir}/delivery_report_{timestamp}.{ext}"
+        abs_path = relative_path
+
+    return relative_path, abs_path
 
 
 def set_table_outer_border(ws, min_row, max_row, min_col, max_col, border_side):

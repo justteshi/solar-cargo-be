@@ -27,7 +27,7 @@ class ReportFileService:
 
     def generate_excel_path(self, filename):
         """Generate full Excel file path"""
-        return os.path.join(self.excel_dir, filename)
+        return f"{settings.REPORT_PATHS['EXCEL_SUBDIR']}/{filename}"
 
     def generate_files(self, report_data, excel_path):
         """Generate both Excel and PDF files"""
@@ -68,9 +68,12 @@ class ReportUpdateService:
 
     @staticmethod
     def update_report_files(report_id, excel_filename, pdf_filename):
-        """Update report instance with generated file paths"""
-        report_instance = DeliveryReport.objects.get(id=report_id)
-        report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
-        report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
-        report_instance.save()
-        return report_instance
+        try:
+            report_instance = DeliveryReport.objects.get(id=report_id)
+            report_instance.excel_report_file = f"{settings.REPORT_PATHS['EXCEL_SUBDIR']}/{excel_filename}"
+            report_instance.pdf_report_file = f"{settings.REPORT_PATHS['PDF_SUBDIR']}/{pdf_filename}"
+            report_instance.save()
+            return report_instance
+        except DeliveryReport.DoesNotExist:
+            logger.error(f"Report with ID {report_id} not found")
+            raise

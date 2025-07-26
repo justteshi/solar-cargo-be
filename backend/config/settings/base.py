@@ -31,6 +31,21 @@ INSTALLED_APPS = [
     'authentication',
     'django_select2',
 ]
+# Report file paths configuration
+REPORT_PATHS = {
+    'EXCEL_SUBDIR': 'delivery_reports_excel',
+    'PDF_SUBDIR': 'delivery_reports_pdf',
+    'TEMPLATE_PATH': 'delivery_report_template.xlsx',
+}
+
+# Image processing configuration
+IMAGE_CONFIG = {
+    'MAX_WORKERS': 4,
+    'TIMEOUT_SECONDS': 30,
+    'MAX_PAGE_HEIGHT': 1060,
+    'DESCRIPTOR_HEIGHT': 20,
+    'MAX_WIDTH': 700,
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',

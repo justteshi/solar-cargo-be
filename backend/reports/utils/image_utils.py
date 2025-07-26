@@ -45,8 +45,10 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7)
     used_height = cell_height * (rows - 1) + (cell_height if last_row_images else 0)
     collage = PILImage.new("RGBA", (cell_width * cols, cell_height * rows), (255, 255, 255, 0))
 
+    max_workers = min(settings.IMAGE_CONFIG['MAX_WORKERS'], len(image_urls))
+    timeout = settings.IMAGE_CONFIG['TIMEOUT_SECONDS']
     # Process images in parallel
-    with ThreadPoolExecutor(max_workers=min(4, len(image_urls))) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create partial function with fixed dimensions
         process_func = functools.partial(fetch_and_process_image,
                                          cell_width=cell_width,
@@ -60,7 +62,7 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7)
         for future in concurrent.futures.as_completed(future_to_index):
             idx = future_to_index[future]
             try:
-                pil_img = future.result(timeout=30)  # 30 second timeout per image
+                pil_img = future.result(timeout=timeout)  # 30 second timeout per image
                 if pil_img:
                     x = (idx % cols) * cell_width + (cell_width - pil_img.width) // 2
                     y = (idx // cols) * cell_height + (cell_height - pil_img.height) // 2
@@ -120,9 +122,9 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
     img_ws.page_margins.right = 0.2
 
     row = 1
-    max_page_height = 1060
-    descriptor_height = 20
-    max_width = 700
+    max_page_height = settings.IMAGE_CONFIG['MAX_PAGE_HEIGHT']
+    descriptor_height = settings.IMAGE_CONFIG['DESCRIPTOR_HEIGHT']
+    max_width = settings.IMAGE_CONFIG['MAX_WIDTH']
     image_height = max_page_height - descriptor_height
 
     # Process images in parallel first
@@ -171,9 +173,9 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
 
 def insert_cmr_sheet(ws, cmr_url=None):
     wb = ws.parent
-    max_page_height = 1060
-    descriptor_height = 20
-    max_width = 700
+    max_page_height = settings.IMAGE_CONFIG['MAX_PAGE_HEIGHT']
+    descriptor_height = settings.IMAGE_CONFIG['DESCRIPTOR_HEIGHT']
+    max_width = settings.IMAGE_CONFIG['MAX_WIDTH']
     image_height = max_page_height - descriptor_height
     if not cmr_url:
         return
