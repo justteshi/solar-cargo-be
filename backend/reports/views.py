@@ -32,8 +32,11 @@ from .serializers import (
     LocationSerializer, SupplierAutocompleteSerializer
 )
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from .services import ReportFileService, ReportDataService, ReportUpdateService
 
+import logging
 
+logger = logging.getLogger(__name__)
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -61,39 +64,42 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
         response = super().create(request, *args, **kwargs)
 
         if response.status_code == 201:
-            report_data = response.data
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_id = report_data.get('id')  # Assuming response.data contains the report ID
-            # Generate file paths
-            # Use MEDIA_ROOT for absolute path
-            excel_dir = os.path.join(settings.MEDIA_ROOT, "delivery_reports_excel")
-            os.makedirs(excel_dir, exist_ok=True)
-            excel_filename = f"delivery_report_{timestamp}.xlsx"
-            pdf_filename = f"delivery_report_{timestamp}.pdf"
-            excel_path = os.path.join(excel_dir, excel_filename)
-            # Get the username and location from the user ID
-            user_id = report_data.get('user')
-            report_data['user'] = get_username_from_id(user_id)
-            location_id = report_data.get('location')
-            location_obj = Location.objects.filter(id=location_id).first()
-            if location_obj:
-                report_data['location'] = location_obj.name
-                report_data['client_logo'] = str(location_obj.logo.url) if location_obj.logo else None
-            else:
-                report_data['location'] = ""
-                report_data['client_logo'] = None
-            # Save Excel
-            save_report_to_excel(report_data, file_path=excel_path)
-            # Convert to PDF
-            convert_excel_to_pdf(excel_path)
-            # Update the DeliveryReport model
-            from .models import DeliveryReport  # adjust import as needed
-            report_instance = DeliveryReport.objects.get(id=report_id)
-            report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
-            report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
-            report_instance.save()
+            try:
+                self._handle_file_generation(response.data)
+            except Exception as e:
+                logger.error(f"File generation failed: {e}")
+                return Response(
+                    {"error": "Failed to generate report files"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
         return response
+
+    def _handle_file_generation(self, report_data):
+        """Handle the complete file generation workflow"""
+        report_id = report_data.get('id')
+
+        # Initialize services
+        file_service = ReportFileService()
+        data_service = ReportDataService()
+        update_service = ReportUpdateService()
+
+        # Generate filenames and paths
+        filenames = file_service.generate_filenames()
+        excel_path = file_service.generate_excel_path(filenames['excel'])
+
+        # Prepare report data
+        prepared_data = data_service.prepare_report_data(report_data.copy())
+
+        # Generate files
+        file_service.generate_files(prepared_data, excel_path)
+
+        # Update database
+        update_service.update_report_files(
+            report_id,
+            filenames['excel'],
+            filenames['pdf']
+        )
 
     @extend_schema(
         tags=["Delivery Reports"],
@@ -227,7 +233,7 @@ class ReportsByLocationView(ListAPIView):
 
 class RecognizePlatesView(APIView):
     parser_classes = [MultiPartParser]
-
+    permission_classes = [IsAuthenticated]
     @extend_schema(
         request=inline_serializer(
             name='PlateRecognitionRequest',
@@ -266,31 +272,47 @@ class RecognizePlatesView(APIView):
                 {"error": "Both truck_plate_image and trailer_plate_image are required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        # Validate uploaded files for security
+        try:
+            validate_image_file(truck_image)
+            validate_image_file(trailer_image)
+        except FileValidationError as e:
+            return Response(
+                {"error": f"File validation failed: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         def process_uploaded_image(uploaded_file):
             ext = os.path.splitext(uploaded_file.name)[1] or ".jpg"
-            with uploaded_file.open('rb') as f:
-                with tempfile.NamedTemporaryFile(suffix=ext, delete=True) as tmp_file:
-                    tmp_file.write(f.read())
-                    tmp_file.flush()
-                    return recognize_plate(tmp_file.name)
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                with uploaded_file.open('rb') as f:
+                    temp_file.write(f.read())
+                temp_file_path = temp_file.name
+
+            try:
+                return recognize_plate(temp_file_path)
+            finally:
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
 
         try:
             truck_plate = process_uploaded_image(truck_image)
-        except PlateRecognitionError as e:
-            truck_plate = None
-            print(f"[Truck Plate Error] {e}")
-
-        try:
             trailer_plate = process_uploaded_image(trailer_image)
-        except PlateRecognitionError as e:
-            trailer_plate = None
-            print(f"[Trailer Plate Error] {e}")
 
-        return Response({
-            "truck_plate": truck_plate,
-            "trailer_plate": trailer_plate,
-        })
+            return Response({
+                "truck_plate": truck_plate,
+                "trailer_plate": trailer_plate
+            })
+        except PlateRecognitionError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Unexpected error: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class SupplierAutocompleteView(ListCreateAPIView):
     serializer_class = SupplierAutocompleteSerializer
