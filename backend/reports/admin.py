@@ -106,10 +106,20 @@ class ItemAdmin(NoExtraButtonsAdmin):
     list_display = ['name', 'location']
     list_filter = ['location']
 
+class SupplierAdminForm(forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+        widgets = {
+            'locations': forms.CheckboxSelectMultiple
+        }
+
 @admin.register(Supplier)
 class SupplierAdmin(NoExtraButtonsAdmin):
     search_fields = ['name']   # autocomplete ще търси по това поле
     list_display = ['name']
+    autocomplete_fields = ['locations']
+    list_filter = ['locations']
 
 @admin.register(Location)
 class LocationAdmin(NoExtraButtonsAdmin):
