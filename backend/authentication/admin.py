@@ -1,8 +1,6 @@
-from admin_interface.models import Theme
 from django.contrib import admin
-from django.contrib.auth.models import User, Group
+from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as DefaultUserAdmin
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
 from .models import UserProfile
 from .forms import CustomUserCreationForm, UserProfileInlineForm
@@ -28,11 +26,6 @@ class UserProfileInline(admin.StackedInline):
 class CustomUserAdmin(NoExtraButtonsAdmin, DefaultUserAdmin):
     add_form = CustomUserCreationForm
     inlines = (UserProfileInline,)
-
-    fieldsets = (
-        (None, {'fields': ('username', 'password')}),
-        ('Personal info', {'fields': ('first_name', 'last_name', 'email')}),
-    )
 
     add_fieldsets = (
         (None, {
@@ -100,8 +93,4 @@ class CustomUserAdmin(NoExtraButtonsAdmin, DefaultUserAdmin):
         return form
 
 admin.site.unregister(User)
-admin.site.unregister(Group)
-admin.site.unregister(BlacklistedToken)
-admin.site.unregister(OutstandingToken)
-admin.site.unregister(Theme)
 admin.site.register(User, CustomUserAdmin)

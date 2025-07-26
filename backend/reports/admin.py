@@ -116,7 +116,7 @@ class SupplierAdminForm(forms.ModelForm):
 
 @admin.register(Supplier)
 class SupplierAdmin(NoExtraButtonsAdmin):
-    search_fields = ['name']   # autocomplete ще търси по това поле
+    search_fields = ['name']
     list_display = ['name']
     autocomplete_fields = ['locations']
     list_filter = ['locations']
@@ -124,5 +124,5 @@ class SupplierAdmin(NoExtraButtonsAdmin):
 @admin.register(Location)
 class LocationAdmin(NoExtraButtonsAdmin):
     inlines = [ReadOnlyItemInline]
-    search_fields = ['name']   # трябва, защото го ползваме в autocomplete_fields
+    search_fields = ['name']
     list_display = ['name']
