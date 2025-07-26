@@ -32,6 +32,7 @@ from .serializers import (
     LocationSerializer, SupplierAutocompleteSerializer
 )
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from .services import ReportFileService, ReportDataService, ReportUpdateService
 
 
 
@@ -61,40 +62,9 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
         response = super().create(request, *args, **kwargs)
 
         if response.status_code == 201:
-            report_data = response.data
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_id = report_data.get('id')  # Assuming response.data contains the report ID
-            # Generate file paths
-            # Use MEDIA_ROOT for absolute path
-            excel_dir = os.path.join(settings.MEDIA_ROOT, "delivery_reports_excel")
-            os.makedirs(excel_dir, exist_ok=True)
-            excel_filename = f"delivery_report_{timestamp}.xlsx"
-            pdf_filename = f"delivery_report_{timestamp}.pdf"
-            excel_path = os.path.join(excel_dir, excel_filename)
-            # Get the username and location from the user ID
-            user_id = report_data.get('user')
-            report_data['user'] = get_username_from_id(user_id)
-            location_id = report_data.get('location')
-            location_obj = Location.objects.filter(id=location_id).first()
-            if location_obj:
-                report_data['location'] = location_obj.name
-                report_data['client_logo'] = str(location_obj.logo.url) if location_obj.logo else None
-            else:
-                report_data['location'] = ""
-                report_data['client_logo'] = None
             try:
-                # Save Excel
-                save_report_to_excel(report_data, file_path=excel_path)
-                # Convert to PDF
-                convert_excel_to_pdf(excel_path)
-
-                # Update the DeliveryReport model if files are successfully created
-                report_instance = DeliveryReport.objects.get(id=report_id)
-                report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
-                report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
-                report_instance.save()
+                self._handle_file_generation(response.data)
             except Exception as e:
-                # if an exception occurs and return error
                 logger.error(f"File generation failed: {e}")
                 return Response(
                     {"error": "Failed to generate report files"},
@@ -102,6 +72,32 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
                 )
 
         return response
+
+    def _handle_file_generation(self, report_data):
+        """Handle the complete file generation workflow"""
+        report_id = report_data.get('id')
+
+        # Initialize services
+        file_service = ReportFileService()
+        data_service = ReportDataService()
+        update_service = ReportUpdateService()
+
+        # Generate filenames and paths
+        filenames = file_service.generate_filenames()
+        excel_path = file_service.generate_excel_path(filenames['excel'])
+
+        # Prepare report data
+        prepared_data = data_service.prepare_report_data(report_data.copy())
+
+        # Generate files
+        file_service.generate_files(prepared_data, excel_path)
+
+        # Update database
+        update_service.update_report_files(
+            report_id,
+            filenames['excel'],
+            filenames['pdf']
+        )
 
     @extend_schema(
         tags=["Delivery Reports"],
