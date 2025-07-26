@@ -14,7 +14,7 @@ def convert_excel_to_pdf(excel_path):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
         local_excel = tmpdir_path / excel_path.name
-        with default_storage.open(str(excel_path.relative_to(settings.MEDIA_ROOT)), 'rb') as f_in, open(local_excel, 'wb') as f_out:
+        with default_storage.open(str(excel_path), 'rb') as f_in, open(local_excel, 'wb') as f_out:
             f_out.write(f_in.read())
         command = [
             'libreoffice',
@@ -38,7 +38,7 @@ def convert_excel_to_pdf(excel_path):
                 f"Stdout: {result.stdout.decode(errors='replace')}\n"
                 f"Stderr: {result.stderr.decode(errors='replace')}"
             )
-        s3_relative_path = f"delivery_reports_pdf/{pdf_filename}"
+        s3_relative_path = f"{settings.REPORT_PATHS['PDF_SUBDIR']}/{pdf_filename}"
         with open(pdf_path, "rb") as f:
             default_storage.save(s3_relative_path, ContentFile(f.read()))
     return default_storage.url(s3_relative_path)
