@@ -4,6 +4,15 @@ from django.contrib.auth.admin import UserAdmin as DefaultUserAdmin
 from .models import UserProfile
 from .forms import CustomUserCreationForm, UserProfileInlineForm
 
+class NoExtraButtonsAdmin(admin.ModelAdmin):
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        # Hide "Save and add another" and "Save and continue editing"
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context=extra_context)
+
+
 
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
@@ -13,7 +22,7 @@ class UserProfileInline(admin.StackedInline):
     filter_horizontal = ('locations',)  # Nice UI for ManyToMany
     fk_name = 'user'
 
-class CustomUserAdmin(DefaultUserAdmin):
+class CustomUserAdmin(NoExtraButtonsAdmin, DefaultUserAdmin):
     add_form = CustomUserCreationForm
     inlines = (UserProfileInline,)
 
@@ -50,6 +59,28 @@ class CustomUserAdmin(DefaultUserAdmin):
     def get_role(self, obj):
         return getattr(obj.profile, 'role', '-') if hasattr(obj, 'profile') else '-'
     get_role.short_description = 'Role'
+
+    def get_fieldsets(self, request, obj=None):
+        fieldsets = super().get_fieldsets(request, obj)
+
+        # Hide the "Permissions" section from staff users
+        if not request.user.is_superuser:
+            fieldsets = [
+                (name, opts) for name, opts in fieldsets if name != 'Permissions'
+            ]
+
+        return fieldsets
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        # Optional: hide specific fields too, even if shown in another section
+        if not request.user.is_superuser:
+            for field_name in ['is_superuser', 'groups', 'user_permissions']:
+                if field_name in form.base_fields:
+                    form.base_fields.pop(field_name)
+
+        return form
 
 admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)

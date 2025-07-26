@@ -137,6 +137,7 @@ class HomePageView(TemplateView):
     tags=["Items"],
     parameters=[
         OpenApiParameter(name='q', description='Search term', required=True, type=str),
+        OpenApiParameter(name='location', description='Location filter', required=False, type=str),
     ],
     responses=ItemSerializer(many=True),
 )
@@ -147,9 +148,14 @@ class ItemAutocompleteView(ListAPIView):
     def get_queryset(self):
         query_params = ItemAutocompleteFilterSerializer(data=self.request.GET)
         query_params.is_valid(raise_exception=True)
-        query = query_params.validated_data['q']
-        return Item.objects.filter(name__icontains=query).order_by('name')[:10]
+        q = query_params.validated_data['q']
+        location = query_params.validated_data.get('location', None)
+        queryset = Item.objects.filter(name__icontains=q)
 
+        if location:
+            queryset = queryset.filter(location=location)
+
+        return queryset.order_by('name')[:10]
 
 @extend_schema(
     tags=["Download Reports"],
