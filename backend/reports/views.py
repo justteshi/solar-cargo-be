@@ -82,16 +82,24 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
             else:
                 report_data['location'] = ""
                 report_data['client_logo'] = None
-            # Save Excel
-            save_report_to_excel(report_data, file_path=excel_path)
-            # Convert to PDF
-            convert_excel_to_pdf(excel_path)
-            # Update the DeliveryReport model
-            from .models import DeliveryReport  # adjust import as needed
-            report_instance = DeliveryReport.objects.get(id=report_id)
-            report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
-            report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
-            report_instance.save()
+            try:
+                # Save Excel
+                save_report_to_excel(report_data, file_path=excel_path)
+                # Convert to PDF
+                convert_excel_to_pdf(excel_path)
+
+                # Update the DeliveryReport model if files are successfully created
+                report_instance = DeliveryReport.objects.get(id=report_id)
+                report_instance.excel_report_file = f"delivery_reports_excel/{excel_filename}"
+                report_instance.pdf_report_file = f"delivery_reports_pdf/{pdf_filename}"
+                report_instance.save()
+            except Exception as e:
+                # if an exception occurs and return error
+                logger.error(f"File generation failed: {e}")
+                return Response(
+                    {"error": "Failed to generate report files"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
         return response
 
