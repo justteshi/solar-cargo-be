@@ -1,42 +1,38 @@
+import logging
 import os
 import tempfile
+import base64
+
+from django.core.exceptions import ObjectDoesNotExist
+from django.core.files.storage import default_storage
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
-from django.http import FileResponse, Http404
-from django.core.files.storage import default_storage
-from django.conf import settings
-from rest_framework import viewsets
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.parsers import MultiPartParser, FormParser
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter, inline_serializer
-from rest_framework.generics import ListAPIView, ListCreateAPIView
-from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework import serializers
 from rest_framework import status
+from rest_framework import viewsets
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.generics import ListAPIView, ListCreateAPIView
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from authentication.permissions import IsAdmin
-
-from datetime import datetime
 from .models import DeliveryReport, Item, Location, Supplier
 from .pagination import ReportsResultsSetPagination
-from .utils.main_utils import get_username_from_id
-from .utils.excel_utils import save_report_to_excel
-from .utils.pdf_utils import convert_excel_to_pdf
-from .utils.plate_recognition_utils import recognize_plate, PlateRecognitionError
-
 from .serializers import (
     DeliveryReportSerializer,
     ItemSerializer,
     ItemAutocompleteFilterSerializer,
-    LocationSerializer, SupplierAutocompleteSerializer
+    SupplierAutocompleteSerializer
 )
-from rest_framework.permissions import IsAuthenticated, AllowAny
 from .services import ReportFileService, ReportDataService, ReportUpdateService
-
-import logging
+from .utils.file_validators import validate_image_file, FileValidationError
+from .utils.plate_recognition_utils import recognize_plate, PlateRecognitionError
 
 logger = logging.getLogger(__name__)
+
 
 class DeliveryReportViewSet(viewsets.ModelViewSet):
     queryset = DeliveryReport.objects.all().order_by('-created_at')
@@ -135,6 +131,7 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         return super().destroy(request, *args, **kwargs)
 
+
 class HomePageView(TemplateView):
     template_name = 'home.html'
 
@@ -148,7 +145,7 @@ class HomePageView(TemplateView):
 )
 class ItemAutocompleteView(ListAPIView):
     serializer_class = ItemSerializer
-    permission_classes = [AllowAny] # Can be set IsAuthenticated if needed
+    permission_classes = [AllowAny]  # Can be set IsAuthenticated if needed
 
     def get_queryset(self):
         query_params = ItemAutocompleteFilterSerializer(data=self.request.GET)
@@ -200,6 +197,101 @@ def download_pdf_report(request, report_id):
     filename = os.path.basename(file_path)
     return FileResponse(file, as_attachment=True, filename=filename)
 
+def encode_file(file_field, filename):
+    """
+    Encode a file into base64 format.
+    """
+    try:
+        with file_field.open('rb') as f:
+            encoded = base64.b64encode(f.read()).decode('utf-8')
+        return {
+            "filename": filename,
+            "content": encoded
+        }
+    except Exception as e:
+        logging.error(f"Error encoding file {filename}: {e}")
+        return None
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def download_report_media(request, report_id):
+    """
+    Return media files as base64-encoded JSON.
+    """
+    try:
+        report = DeliveryReport.objects.get(pk=report_id)
+    except DeliveryReport.DoesNotExist:
+        return JsonResponse({"error": "Report not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    media_data = {}
+
+    # Single files
+    if report.proof_of_delivery_image:
+        encoded = encode_file(report.proof_of_delivery_image, "proof_of_delivery.jpg")
+        if encoded:
+            media_data['delivery_proof'] = [encoded]
+
+    if report.cmr_image:
+        encoded = encode_file(report.cmr_image, "cmr.jpg")
+        if encoded:
+            media_data['cmr'] = [encoded]
+
+    # Multiple files
+    slip_images = []
+    for i, img in enumerate(report.slip_images.all()):
+        encoded = encode_file(img.image, f"slip_{i}.jpg")
+        if encoded:
+            slip_images.append(encoded)
+    if slip_images:
+        media_data['delivery_slips'] = slip_images
+
+    damage_images = []
+    for i, img in enumerate(report.damage_images.all()):
+        encoded = encode_file(img.image, f"damage_{i}.jpg")
+        if encoded:
+            damage_images.append(encoded)
+    if damage_images:
+        media_data['damage_images'] = damage_images
+
+    additional_images = []
+    for i, img in enumerate(report.additional_images.all()):
+        encoded = encode_file(img.image, f"additional_{i}.jpg")
+        if encoded:
+            additional_images.append(encoded)
+    if additional_images:
+        media_data['additional'] = additional_images
+
+    return JsonResponse({
+        "media_data": media_data,
+        "total_files": sum(len(files) for files in media_data.values())
+    }, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    operation_id="download_single_media_file",  # Add unique operation_id
+    tags=["Download Reports"],
+    description="Download a specific media file from a delivery report.",
+    parameters=[
+        OpenApiParameter(
+            name='report_id',
+            description='Delivery report ID',
+            required=True,
+            type=int,
+            location=OpenApiParameter.PATH,
+        ),
+        OpenApiParameter(
+            name='file_type',
+            description='Type of file to download',
+            required=True,
+            type=str,
+            location=OpenApiParameter.PATH,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(response={"type": "file"}, description="Media file"),
+        404: OpenApiResponse(description="File not found")
+    }
+)
 @extend_schema(
     parameters=[
         OpenApiParameter(name="location_id",
@@ -234,6 +326,7 @@ class ReportsByLocationView(ListAPIView):
 class RecognizePlatesView(APIView):
     parser_classes = [MultiPartParser]
     permission_classes = [IsAuthenticated]
+
     @extend_schema(
         request=inline_serializer(
             name='PlateRecognitionRequest',
@@ -313,6 +406,7 @@ class RecognizePlatesView(APIView):
                 {"error": f"Unexpected error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
 
 class SupplierAutocompleteView(ListCreateAPIView):
     serializer_class = SupplierAutocompleteSerializer
