@@ -13,7 +13,6 @@ from django.conf import settings
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import functools
-from .file_validators import validate_image_file, FileValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +233,7 @@ def _is_valid_image_content(content):
 
     return False
 
+
 def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.orientation = "portrait"
     img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
@@ -302,6 +302,7 @@ def fetch_image_bytes(url):
         logger.error(f"Error fetching image from {url}: {e}")
         return b''
 
+
 def _is_valid_image_content(content):
     """
     Basic validation of image file content.
@@ -328,6 +329,7 @@ def _is_valid_image_content(content):
         return True
 
     return False
+
 
 def transform_image(pil_img):
     output_img = io.BytesIO()

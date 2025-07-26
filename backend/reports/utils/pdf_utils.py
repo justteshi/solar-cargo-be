@@ -8,6 +8,7 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+
 def convert_excel_to_pdf(excel_path):
     excel_path = Path(excel_path)
     pdf_filename = excel_path.with_suffix('.pdf').name
