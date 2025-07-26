@@ -2,13 +2,12 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as DefaultUserAdmin
 from .models import UserProfile
-from .forms import CustomUserCreationForm, UserProfileInlineForm, RequiredLocationsInlineFormSet
+from .forms import CustomUserCreationForm, UserProfileInlineForm
 
 
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     form = UserProfileInlineForm
-    formset = RequiredLocationsInlineFormSet
     can_delete = False
     verbose_name_plural = 'Profile'
     filter_horizontal = ('locations',)  # Nice UI for ManyToMany
