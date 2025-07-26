@@ -58,161 +58,239 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
 
     wb = None
     try:
-        # Load the workbook
-        if default_storage.exists(relative_path):
-            with default_storage.open(relative_path, 'rb') as f:
-                wb = load_workbook(f)
-        elif Path(abs_path).exists():
-            with open(abs_path, 'rb') as f:
-                wb = load_workbook(f)
-        else:
-            with open(template_path, 'rb') as f:
-                wb = load_workbook(f)
-            ws = wb.active
-            for key, cell in CELL_MAP.items():
-                if key in data:
-                    if key == 'client_logo':
-                        continue
-                    value = data[key]
-                    if isinstance(value, bool):
-                        value = "Yes" if value else "No"
-                    target_cell = get_top_left_cell(ws, cell)
-                    ws[target_cell] = value
-                    if key in ['location']:
-                        ws[target_cell].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                    elif key == 'user':
-                        ws[target_cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-
+        wb = _load_or_create_workbook(relative_path, abs_path, template_path, data)
         ws = wb.active
 
-        # Insert client logo
-        client_logo_url = data.get('client_logo')
-        if client_logo_url:
-            insert_client_logo(ws, client_logo_url, cell="I3", end_cell="L7")
-        else:
-            logger.info("No client logo URL provided.")
-
-        # Handle status fields
-        for field, row in STATUS_FIELDS.items():
-            value = data.get(field, None)
-            for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
-                cell = f'{col}{row}'
-                target_cell = get_top_left_cell(ws, cell)
-                ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (
-                        value is None and col == 'K')) else ""
-                ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
-
-            comment_key = COMMENT_FIELD_MAP.get(field)
-            if comment_key is not None and comment_key in data:
-                comment_cell = f"L{row}"
-                top_left_comment_cell = get_top_left_cell(ws, comment_cell)
-                ws[top_left_comment_cell] = data[comment_key]
-                ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
-                if extra_rows == 0:
-                    autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=15)
-                else:
-                    offset_row = row + extra_rows
-                    offset_cell = f"L{offset_row}"
-                    top_left_offset_cell = get_top_left_cell(ws, offset_cell)
-                    autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
-
-        # Write items
-        write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
-
-        # Handle images
-        extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
-        image_start_row = 28 + extra_rows
-        image_end_row = 41 + extra_rows
-        image_start_cell = f"A{image_start_row}"
-        image_end_cell = f"L{image_end_row}"
-        logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
-
-        image_urls = [
-            data.get('truck_license_plate_image'),
-            data.get('trailer_license_plate_image'),
-            data.get('proof_of_delivery_image'),
-        ]
-        image_urls = [url for url in image_urls if url]
-        create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=7)
-
-        # Set date
-        ws['J44'] = datetime.now().strftime("%Y-%m-%d")
-        ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        # Handle different sections
+        _handle_basic_fields(ws, data)
+        _handle_client_logo(ws, data)
+        _handle_status_fields(ws, data, extra_rows)
+        _handle_items_section(ws, items, extra_rows)
+        _handle_image_sections(ws, data, extra_rows)
+        _handle_date_field(ws)
 
         # Save initial workbook
-        output = None
-        try:
-            output = io.BytesIO()
-            wb.save(output)
-            output.seek(0)
-            default_storage.save(relative_path, ContentFile(output.read()))
-        finally:
-            if output:
-                output.close()
+        _save_workbook(wb, relative_path)
 
         # Handle extra items if needed
         if len(items) > ITEMS_PER_PAGE:
             append_extra_items_to_excel(relative_path, items[ITEMS_PER_PAGE:], 9 + ITEMS_PER_PAGE)
 
-        # Reload workbook for final operations
-        wb_final = None
-        try:
-            with default_storage.open(relative_path, 'rb') as f:
-                wb_final = load_workbook(f)
-                ws = wb_final.active
-
-            # Handle comments
-            extra_rows = len(items) - ITEMS_PER_PAGE if len(items) > ITEMS_PER_PAGE else 0
-            comments_row = 26 + extra_rows
-            comments_cell = f"A{comments_row}"
-            if 'comments' in data:
-                ws[comments_cell] = data['comments']
-                ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
-                autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
-
-            # Insert a manual page break before the damages section
-            ws.row_breaks.append(Break(id=ws.max_row + 1))
-
-            # Create the Damages section if applicable
-            write_damages_section(ws, data)
-
-            # Insert CMR image if available
-            cmr_url = data.get('cmr_image')
-            if cmr_url:
-                insert_cmr_sheet(ws, cmr_url)
-
-            # Insert Delivery Slip images if available
-            delivery_slip_images = data.get('delivery_slip_images_urls', [])
-            if delivery_slip_images:
-                insert_images_in_single_sheet(wb_final, delivery_slip_images, "Delivery Slips")
-
-            # Add additional images if available
-            additional_images = data.get('additional_images_urls', [])
-            if additional_images:
-                insert_images_in_single_sheet(wb_final, additional_images, "Additional Images")
-
-            # Final save
-            output_final = None
-            try:
-                output_final = io.BytesIO()
-                wb_final.save(output_final)
-                output_final.seek(0)
-                with default_storage.open(relative_path, 'wb') as f:
-                    f.write(output_final.read())
-            finally:
-                if output_final:
-                    output_final.close()
-
-        finally:
-            if wb_final:
-                wb_final.close()
+        # Final operations
+        _handle_final_operations(relative_path, data, items)
 
         return abs_path
 
     finally:
-        # Always close the main workbook
         if wb:
             wb.close()
+
+
+def _load_or_create_workbook(relative_path, abs_path, template_path, data):
+    """Load existing workbook or create from template"""
+    if default_storage.exists(relative_path):
+        with default_storage.open(relative_path, 'rb') as f:
+            return load_workbook(f)
+    elif Path(abs_path).exists():
+        with open(abs_path, 'rb') as f:
+            return load_workbook(f)
+    else:
+        with open(template_path, 'rb') as f:
+            wb = load_workbook(f)
+        ws = wb.active
+        _populate_basic_template_fields(ws, data)
+        return wb
+
+
+def _populate_basic_template_fields(ws, data):
+    """Populate basic fields when creating from template"""
+    for key, cell in CELL_MAP.items():
+        if key in data and key != 'client_logo':
+            value = data[key]
+            if isinstance(value, bool):
+                value = "Yes" if value else "No"
+            target_cell = get_top_left_cell(ws, cell)
+            ws[target_cell] = value
+            _apply_cell_alignment(ws, target_cell, key)
+
+
+def _apply_cell_alignment(ws, cell, key):
+    """Apply specific alignment based on field type"""
+    if key in ['location']:
+        ws[cell].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    elif key == 'user':
+        ws[cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+
+def _handle_basic_fields(ws, data):
+    """Handle basic field population for existing workbooks"""
+    for key, cell in CELL_MAP.items():
+        if key in data and key != 'client_logo':
+            value = data[key]
+            if isinstance(value, bool):
+                value = "Yes" if value else "No"
+            target_cell = get_top_left_cell(ws, cell)
+            ws[target_cell] = value
+            _apply_cell_alignment(ws, target_cell, key)
+
+
+def _handle_client_logo(ws, data):
+    """Handle client logo insertion"""
+    client_logo_url = data.get('client_logo')
+    if client_logo_url:
+        insert_client_logo(ws, client_logo_url, cell="I3", end_cell="L7")
+    else:
+        logger.info("No client logo URL provided.")
+
+
+def _handle_status_fields(ws, data, extra_rows):
+    """Handle status field checkboxes and comments"""
+    for field, row in STATUS_FIELDS.items():
+        _populate_status_checkboxes(ws, data, field, row)
+        _populate_status_comments(ws, data, field, row, extra_rows)
+
+
+def _populate_status_checkboxes(ws, data, field, row):
+    """Populate status checkboxes (Yes/No/N/A)"""
+    value = data.get(field, None)
+    for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
+        cell = f'{col}{row}'
+        target_cell = get_top_left_cell(ws, cell)
+        ws[target_cell] = TICK if ((value is True and col == 'I') or
+                                   (value is False and col == 'J') or
+                                   (value is None and col == 'K')) else ""
+        ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
+
+
+def _populate_status_comments(ws, data, field, row, extra_rows):
+    """Populate status field comments"""
+    comment_key = COMMENT_FIELD_MAP.get(field)
+    if comment_key is not None and comment_key in data:
+        comment_cell = f"L{row}"
+        top_left_comment_cell = get_top_left_cell(ws, comment_cell)
+        ws[top_left_comment_cell] = data[comment_key]
+        ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
+
+        if extra_rows == 0:
+            autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=15)
+        else:
+            offset_row = row + extra_rows
+            offset_cell = f"L{offset_row}"
+            top_left_offset_cell = get_top_left_cell(ws, offset_cell)
+            autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
+
+
+def _handle_items_section(ws, items, extra_rows):
+    """Handle items table population"""
+    write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
+
+
+def _handle_image_sections(ws, data, extra_rows):
+    """Handle all image insertions"""
+    image_start_row = 28 + extra_rows
+    image_end_row = 41 + extra_rows
+    image_start_cell = f"A{image_start_row}"
+    image_end_cell = f"L{image_end_row}"
+
+    logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
+
+    image_urls = [
+        data.get('truck_license_plate_image'),
+        data.get('trailer_license_plate_image'),
+        data.get('proof_of_delivery_image'),
+    ]
+    image_urls = [url for url in image_urls if url]
+    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=7)
+
+
+def _handle_date_field(ws):
+    """Set current date"""
+    ws['J44'] = datetime.now().strftime("%Y-%m-%d")
+    ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+
+def _save_workbook(wb, relative_path):
+    """Save workbook to storage"""
+    output = None
+    try:
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        default_storage.save(relative_path, ContentFile(output.read()))
+    finally:
+        if output:
+            output.close()
+
+
+def _handle_final_operations(relative_path, data, items):
+    """Handle comments, damages, and additional sheets"""
+    wb_final = None
+    try:
+        with default_storage.open(relative_path, 'rb') as f:
+            wb_final = load_workbook(f)
+            ws = wb_final.active
+
+        extra_rows = len(items) - ITEMS_PER_PAGE if len(items) > ITEMS_PER_PAGE else 0
+
+        _handle_comments_section(ws, data, extra_rows)
+        _handle_page_break(ws)
+        _handle_damages_section(ws, data)
+        _handle_additional_sheets(wb_final, data)
+
+        _save_final_workbook(wb_final, relative_path)
+
+    finally:
+        if wb_final:
+            wb_final.close()
+
+
+def _handle_comments_section(ws, data, extra_rows):
+    """Handle comments section"""
+    comments_row = 26 + extra_rows
+    comments_cell = f"A{comments_row}"
+    if 'comments' in data:
+        ws[comments_cell] = data['comments']
+        ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
+        autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
+
+
+def _handle_page_break(ws):
+    """Insert manual page break"""
+    ws.row_breaks.append(Break(id=ws.max_row + 1))
+
+
+def _handle_damages_section(ws, data):
+    """Handle damages section creation"""
+    write_damages_section(ws, data)
+
+
+def _handle_additional_sheets(wb, data):
+    """Handle CMR and delivery slip images"""
+    cmr_url = data.get('cmr_image')
+    if cmr_url:
+        insert_cmr_sheet(wb.active, cmr_url)
+
+    delivery_slip_images = data.get('delivery_slip_images_urls', [])
+    if delivery_slip_images:
+        insert_images_in_single_sheet(wb, delivery_slip_images, "Delivery Slips")
+
+    additional_images = data.get('additional_images_urls', [])
+    if additional_images:
+        insert_images_in_single_sheet(wb, additional_images, "Additional Images")
+
+
+def _save_final_workbook(wb, relative_path):
+    """Save final workbook with all modifications"""
+    output_final = None
+    try:
+        output_final = io.BytesIO()
+        wb.save(output_final)
+        output_final.seek(0)
+        with default_storage.open(relative_path, 'wb') as f:
+            f.write(output_final.read())
+    finally:
+        if output_final:
+            output_final.close()
 
 
 def write_items_to_excel(ws, items, start_row):
