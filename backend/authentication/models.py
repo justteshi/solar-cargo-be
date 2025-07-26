@@ -16,3 +16,4 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='basic')
     locations = models.ManyToManyField(Location, blank= True)
     profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True)
+    signature = models.ImageField(upload_to='signatures/', null=True, blank=True)

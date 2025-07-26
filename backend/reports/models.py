@@ -3,6 +3,13 @@ from django.db import models
 
 class Item(models.Model):
     name = models.CharField(max_length=100)
+    location = models.ForeignKey(
+        'Location',
+        on_delete=models.CASCADE,
+        related_name='items',
+        null=True,  # <- allow nulls for now
+        blank=True
+    )
 
     def __str__(self):
         return self.name
@@ -10,6 +17,7 @@ class Item(models.Model):
 class Location(models.Model):
     name = models.CharField(max_length=150)
     logo = models.ImageField(upload_to='locations/logos/')
+    client_name = models.CharField(max_length=512, null=True, blank=True)
 
     def __str__(self):
         return self.name

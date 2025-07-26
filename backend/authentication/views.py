@@ -65,7 +65,7 @@ class AuthViewSet(viewsets.ViewSet):
             locations = profile.locations.all()
             if locations.exists():
                 # Add list of location names, or adjust to include more fields if needed
-                refresh['locations'] = [{'id': loc.id, 'name': loc.name} for loc in locations]
+                refresh['locations'] = [{'id': loc.id, 'name': loc.name, 'client_name': loc.client_name} for loc in locations]
 
         # Add userPicture URL if exists
         if profile and profile.profile_picture:
