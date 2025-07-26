@@ -21,8 +21,7 @@ ITEMS_PER_PAGE = 7
 TICK = "✓"
 CELL_MAP = {
     'location': 'A3',
-    'supplier': 'C9',
-    'client_logo': 'I3',
+    'supplier_name': 'C9',
     'delivery_slip_number': 'C10',
     'logistic_company': 'C11',
     'container_number': 'C12',
@@ -144,7 +143,7 @@ def _handle_client_logo(ws, data):
     """Handle client logo insertion"""
     client_logo_url = data.get('client_logo')
     if client_logo_url:
-        insert_client_logo(ws, client_logo_url, cell="I3", end_cell="L7")
+        insert_client_logo(ws, client_logo_url, cell="I4", end_cell="L7")
     else:
         logger.info("No client logo URL provided.")
 
