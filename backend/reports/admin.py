@@ -32,6 +32,15 @@ class DeliveryReportDamageImageInline(admin.TabularInline):
 
 @admin.register(DeliveryReport)
 class DeliveryReportAdmin(admin.ModelAdmin):
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if extra_context is None:
+            extra_context = {}
+        extra_context['show_save'] = True
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        extra_context['show_delete'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
     form = DeliveryReportAdminForm
     inlines = [DeliveryReportImageInline, DeliveryReportItemInline, DeliveryReportDamageImageInline]
 
@@ -66,15 +75,53 @@ class DeliveryReportAdmin(admin.ModelAdmin):
 
 @admin.register(Item)
 class ItemAdmin(admin.ModelAdmin):
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if extra_context is None:
+            extra_context = {}
+        extra_context['show_save'] = True
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        extra_context['show_delete'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
     search_fields = ['name']
     list_display = ['name']
 
+class SupplierAdminForm(forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+        widgets = {
+            'locations': forms.CheckboxSelectMultiple
+        }
+
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    search_fields = ['name']   # autocomplete ще търси по това поле
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if extra_context is None:
+            extra_context = {}
+        extra_context['show_save'] = True
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        extra_context['show_delete'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    search_fields = ['name']
     list_display = ['name']
+    autocomplete_fields = ['locations']
+    list_filter = ['locations']
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    search_fields = ['name']   # трябва, защото го ползваме в autocomplete_fields
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        if extra_context is None:
+            extra_context = {}
+        extra_context['show_save'] = True
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        extra_context['show_delete'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    search_fields = ['name']
     list_display = ['name']
+
