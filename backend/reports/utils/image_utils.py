@@ -10,8 +10,13 @@ from openpyxl.styles import Font, Alignment
 import boto3
 from urllib.parse import urlparse
 from django.conf import settings
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
+import functools
 
 logger = logging.getLogger(__name__)
+
+
 def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7):
     n_images = len(image_urls)
     if n_images == 0:
@@ -39,12 +44,30 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7)
     used_height = cell_height * (rows - 1) + (cell_height if last_row_images else 0)
     collage = PILImage.new("RGBA", (cell_width * cols, cell_height * rows), (255, 255, 255, 0))
 
-    for idx, url in enumerate(image_urls):
-        pil_img = fetch_and_process_image(url, cell_width, cell_height)
-        if pil_img:
-            x = (idx % cols) * cell_width + (cell_width - pil_img.width) // 2
-            y = (idx // cols) * cell_height + (cell_height - pil_img.height) // 2
-            collage.paste(pil_img, (x, y), pil_img)
+    max_workers = min(settings.IMAGE_CONFIG['MAX_WORKERS'], len(image_urls))
+    timeout = settings.IMAGE_CONFIG['TIMEOUT_SECONDS']
+    # Process images in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create partial function with fixed dimensions
+        process_func = functools.partial(fetch_and_process_image,
+                                         cell_width=cell_width,
+                                         cell_height=cell_height)
+        # Submit all image processing tasks
+        future_to_index = {
+            executor.submit(process_func, url): idx
+            for idx, url in enumerate(image_urls)
+        }
+        # Collect results as they complete
+        for future in concurrent.futures.as_completed(future_to_index):
+            idx = future_to_index[future]
+            try:
+                pil_img = future.result(timeout=timeout)  # 30 second timeout per image
+                if pil_img:
+                    x = (idx % cols) * cell_width + (cell_width - pil_img.width) // 2
+                    y = (idx // cols) * cell_height + (cell_height - pil_img.height) // 2
+                    collage.paste(pil_img, (x, y), pil_img)
+            except Exception as e:
+                logger.error(f"Failed to process image {idx} from {image_urls[idx]}: {e}")
 
     collage = collage.crop((0, 0, used_width, used_height))
     output_img = transform_image(collage)
@@ -52,19 +75,40 @@ def create_collage_of_images(ws, image_urls, start_cell, end_cell, row_offset=7)
     img.anchor = start_cell
     ws.add_image(img)
 
+
 def fetch_and_process_image(url, cell_width, cell_height):
     try:
         img_bytes = io.BytesIO(fetch_image_bytes(url))
+        if not img_bytes.getbuffer().nbytes:
+            return None
+            # Validate the fetched image content
+            try:
+                # Create a mock file object for validation
+                img_bytes.seek(0)
+                content = img_bytes.read(8192)
+                img_bytes.seek(0)
+
+                # Basic validation of image content
+                if not _is_valid_image_content(content):
+                    logger.warning(f"Invalid image content from {url}")
+                    return None
+
+            except Exception as e:
+                logger.error(f"Image validation failed for {url}: {e}")
+                return None
         pil_img = PILImage.open(img_bytes)
         pil_img = ImageOps.exif_transpose(pil_img)
-        transformed_bytes = transform_image(pil_img)
-        pil_img = PILImage.open(transformed_bytes)
-        pil_img.thumbnail((cell_width, cell_height), PILImage.LANCZOS)
         pil_img = pil_img.convert("RGBA")
+
+        ratio = min(cell_width / pil_img.width, cell_height / pil_img.height, 1)
+        new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
+        pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
+
         return pil_img
     except Exception as e:
         logger.error(f"Error processing image from {url}: {e}")
         return None
+
 
 def insert_images_in_single_sheet(wb, images, sheet_title):
     """
@@ -77,10 +121,29 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
     img_ws.page_margins.right = 0.2
 
     row = 1
-    max_page_height = 1060
-    descriptor_height = 20
-    max_width = 700
+    max_page_height = settings.IMAGE_CONFIG['MAX_PAGE_HEIGHT']
+    descriptor_height = settings.IMAGE_CONFIG['DESCRIPTOR_HEIGHT']
+    max_width = settings.IMAGE_CONFIG['MAX_WIDTH']
     image_height = max_page_height - descriptor_height
+
+    # Process images in parallel first
+    processed_images = []
+    with ThreadPoolExecutor(max_workers=min(4, len(images))) as executor:
+        future_to_index = {}
+        for idx, img_obj in enumerate(images):
+            url = img_obj.get('image') if isinstance(img_obj, dict) else img_obj
+            if url:
+                future = executor.submit(process_single_image, url, max_width, image_height)
+                future_to_index[future] = idx
+        results = {}
+        for future in concurrent.futures.as_completed(future_to_index):
+            idx = future_to_index[future]
+            try:
+                result = future.result(timeout=30)
+                results[idx] = result
+            except Exception as e:
+                logger.error(f"Failed to process image {idx}: {e}")
+                results[idx] = None
 
     for idx, img_obj in enumerate(images):
         if idx > 0:
@@ -97,37 +160,21 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
         img_ws.row_dimensions[row].height = descriptor_height
         row += 1
 
-        url = img_obj.get('image') if isinstance(img_obj, dict) else img_obj
-        if not url:
-            continue
-        try:
-            img_bytes = io.BytesIO(fetch_image_bytes(url))
-            pil_img = PILImage.open(img_bytes)
-            pil_img = ImageOps.exif_transpose(pil_img)
-            pil_img = pil_img.convert("RGBA")
-            ratio = min(max_width / pil_img.width, image_height / pil_img.height, 1)
-            new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
-            pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
-            output_img = io.BytesIO()
-            pil_img.save(output_img, format="PNG")
-            output_img.seek(0)
-            xl_img = XLImage(output_img)
+        if idx in results and results[idx]:
+            xl_img, img_row_height = results[idx]
             cell = f'A{row}'
             xl_img.anchor = cell
             img_ws.add_image(xl_img)
-            # Set row height to actual image height in points (1 px ≈ 0.75 pt)
-            img_row_height = new_size[1] * 0.75
             img_ws.row_dimensions[row].height = img_row_height
             row += 1
-        except Exception as e:
-            logger.error(f"Error adding image from {url}: {e}")
     setup_image_worksheet_page(img_ws)
+
 
 def insert_cmr_sheet(ws, cmr_url=None):
     wb = ws.parent
-    max_page_height = 1060
-    descriptor_height = 20
-    max_width = 700
+    max_page_height = settings.IMAGE_CONFIG['MAX_PAGE_HEIGHT']
+    descriptor_height = settings.IMAGE_CONFIG['DESCRIPTOR_HEIGHT']
+    max_width = settings.IMAGE_CONFIG['MAX_WIDTH']
     image_height = max_page_height - descriptor_height
     if not cmr_url:
         return
@@ -142,27 +189,50 @@ def insert_cmr_sheet(ws, cmr_url=None):
         img_ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
         img_ws.row_dimensions[1].height = descriptor_height
 
-        img_bytes = io.BytesIO(fetch_image_bytes(cmr_url))
-        pil_img = PILImage.open(img_bytes)
-        pil_img = ImageOps.exif_transpose(pil_img)
-        pil_img = pil_img.convert("RGBA")
-
-        # Resize logic similar to insert_images_in_single_sheet
-        ratio = min(max_width / pil_img.width, image_height / pil_img.height, 1)
-        new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
-        pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
-
-        output_img = io.BytesIO()
-        pil_img.save(output_img, format="PNG")
-        output_img.seek(0)
-        xl_img = XLImage(output_img)
-        xl_img.anchor = "A2"
-        img_ws.add_image(xl_img)
-        img_row_height = new_size[1] * 0.75
-        img_ws.row_dimensions[2].height = img_row_height
+        # Process image asynchronously (though single image, pattern is consistent)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(process_single_image, cmr_url, max_width, image_height)
+            try:
+                result = future.result(timeout=30)
+                if result:
+                    xl_img, img_row_height = result
+                    xl_img.anchor = "A2"
+                    img_ws.add_image(xl_img)
+                    img_ws.row_dimensions[2].height = img_row_height
+            except Exception as e:
+                logger.error(f"Failed to process CMR image: {e}")
         setup_image_worksheet_page(img_ws)
     except Exception as e:
         logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
+
+
+def _is_valid_image_content(content):
+    """
+    Basic validation of image file content.
+    """
+    if len(content) < 10:
+        return False
+
+    # Check for common image signatures
+    image_signatures = [
+        b'\xff\xd8\xff',  # JPEG
+        b'\x89\x50\x4e\x47',  # PNG
+        b'GIF87a', b'GIF89a',  # GIF
+        b'BM',  # BMP
+        b'RIFF',  # WEBP (partial)
+        b'II*\x00', b'MM\x00*'  # TIFF
+    ]
+
+    for sig in image_signatures:
+        if content.startswith(sig):
+            return True
+
+    # Special case for WEBP
+    if b'RIFF' in content[:12] and b'WEBP' in content[:12]:
+        return True
+
+    return False
+
 
 def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.orientation = "portrait"
@@ -171,6 +241,7 @@ def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.fitToWidth = None
     img_ws.page_setup.fitToHeight = None
     img_ws.page_setup.scale = None
+
 
 def get_range_dimensions(ws, start_cell, end_cell):
     from openpyxl.utils import get_column_letter, column_index_from_string
@@ -188,30 +259,77 @@ def get_range_dimensions(ws, start_cell, end_cell):
     )
     return int(total_width), int(total_height)
 
+
 def fetch_image_bytes(url):
     """
     Fetch image bytes from S3 if the URL is an S3 object, else use requests.
     """
-    if url.startswith("s3://"):
-        s3 = boto3.client("s3")
-        parsed = urlparse(url)
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        return obj["Body"].read()
-    elif settings.AWS_STORAGE_BUCKET_NAME in url:
-        # Handle S3 HTTP(S) URLs (e.g., https://bucket.s3.amazonaws.com/key)
-        s3 = boto3.client("s3")
-        parsed = urlparse(url)
-        bucket = parsed.netloc.split(".")[0]
-        key = parsed.path.lstrip("/")
-        obj = s3.get_object(Bucket=bucket, Key=key)
-        return obj["Body"].read()
-    else:
-        # Fallback to requests for external URLs
-        response = requests.get(url)
-        response.raise_for_status()
-        return response.content
+    try:
+        if url.startswith("s3://"):
+            s3 = boto3.client("s3")
+            parsed = urlparse(url)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip("/")
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            content = obj["Body"].read()
+        elif settings.AWS_STORAGE_BUCKET_NAME in url:
+            s3 = boto3.client("s3")
+            parsed = urlparse(url)
+            bucket = parsed.netloc.split(".")[0]
+            key = parsed.path.lstrip("/")
+            obj = s3.get_object(Bucket=bucket, Key=key)
+            content = obj["Body"].read()
+        else:
+            response = requests.get(url, timeout=10, stream=True)
+            response.raise_for_status()
+
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if not content_type.startswith('image/'):
+                logger.warning(f"Invalid content type for image URL {url}: {content_type}")
+                return b''
+
+            content = response.content
+
+        # Validate downloaded content is actually an image
+        if not _is_valid_image_content(content):
+            logger.warning(f"Downloaded content from {url} is not a valid image")
+            return b''
+
+        return content
+
+    except Exception as e:
+        logger.error(f"Error fetching image from {url}: {e}")
+        return b''
+
+
+def _is_valid_image_content(content):
+    """
+    Basic validation of image file content.
+    """
+    if len(content) < 10:
+        return False
+
+    # Check for common image signatures
+    image_signatures = [
+        b'\xff\xd8\xff',  # JPEG
+        b'\x89\x50\x4e\x47',  # PNG
+        b'GIF87a', b'GIF89a',  # GIF
+        b'BM',  # BMP
+        b'RIFF',  # WEBP (partial)
+        b'II*\x00', b'MM\x00*'  # TIFF
+    ]
+
+    for sig in image_signatures:
+        if content.startswith(sig):
+            return True
+
+    # Special case for WEBP - check for both RIFF and WEBP signatures
+    if b'RIFF' in content[:12] and b'WEBP' in content[:12]:
+        return True
+
+    return False
+
 
 def transform_image(pil_img):
     output_img = io.BytesIO()
@@ -225,7 +343,35 @@ def transform_image(pil_img):
     output_img.seek(0)
     return output_img
 
+
 def add_rows_to_cell(cell, n):
     col = ''.join(filter(str.isalpha, cell))
     row = int(''.join(filter(str.isdigit, cell)))
     return f"{col}{row + n}"
+
+
+def process_single_image(url, max_width, image_height):
+    """
+    Process a single image and return XLImage and row height.
+    """
+    try:
+        img_bytes = io.BytesIO(fetch_image_bytes(url))
+        pil_img = PILImage.open(img_bytes)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        pil_img = pil_img.convert("RGBA")
+
+        ratio = min(max_width / pil_img.width, image_height / pil_img.height, 1)
+        new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
+        pil_img = pil_img.resize(new_size, PILImage.LANCZOS)
+
+        output_img = io.BytesIO()
+        pil_img.save(output_img, format="PNG")
+        output_img.seek(0)
+
+        xl_img = XLImage(output_img)
+        img_row_height = new_size[1] * 0.75
+
+        return xl_img, img_row_height
+    except Exception as e:
+        logger.error(f"Error processing image from {url}: {e}")
+        return None

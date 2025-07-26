@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
     DeliveryReportSlipImage, Supplier
 from drf_spectacular.utils import extend_schema_field
+from .utils.file_validators import validate_image_file, validate_file_name, FileValidationError
 import json
 
 class LocationSerializer(serializers.ModelSerializer):

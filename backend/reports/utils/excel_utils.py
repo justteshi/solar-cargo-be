@@ -21,8 +21,7 @@ ITEMS_PER_PAGE = 7
 TICK = "✓"
 CELL_MAP = {
     'location': 'A3',
-    'supplier': 'C9',
-    'client_logo': 'I3',
+    'supplier_name': 'C9',
     'delivery_slip_number': 'C10',
     'logistic_company': 'C11',
     'container_number': 'C12',
@@ -51,69 +50,155 @@ COMMENT_FIELD_MAP = {
 }
 
 
-def save_report_to_excel(data, file_path=None, template_path='delivery_report_template.xlsx'):
-    relative_path, abs_path = get_relative_and_abs_path(file_path, subdir="delivery_reports_excel", ext="xlsx")
+def save_report_to_excel(data, file_path=None, template_path=None):
+    if template_path is None:
+        template_path = settings.REPORT_PATHS['TEMPLATE_PATH']
+    relative_path, abs_path = get_relative_and_abs_path(
+        file_path,
+        subdir=settings.REPORT_PATHS['EXCEL_SUBDIR'],
+        ext="xlsx"
+    )
     items = data.get("items", [])
     extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+
+    wb = None
+    try:
+        wb = _load_or_create_workbook(relative_path, abs_path, template_path, data)
+        ws = wb.active
+
+        # Handle different sections
+        _handle_basic_fields(ws, data)
+        _handle_client_logo(ws, data)
+        _handle_status_fields(ws, data, extra_rows)
+        _handle_items_section(ws, items, extra_rows)
+        _handle_image_sections(ws, data, extra_rows)
+        _handle_date_field(ws)
+
+        # Save initial workbook
+        _save_workbook(wb, relative_path)
+
+        # Handle extra items if needed
+        if len(items) > ITEMS_PER_PAGE:
+            append_extra_items_to_excel(relative_path, items[ITEMS_PER_PAGE:], 9 + ITEMS_PER_PAGE)
+
+        # Final operations
+        _handle_final_operations(relative_path, data, items)
+
+        return abs_path
+
+    finally:
+        if wb:
+            wb.close()
+
+
+def _load_or_create_workbook(relative_path, abs_path, template_path, data):
+    """Load existing workbook or create from template"""
     if default_storage.exists(relative_path):
         with default_storage.open(relative_path, 'rb') as f:
-            wb = load_workbook(f)
+            return load_workbook(f)
     elif Path(abs_path).exists():
         with open(abs_path, 'rb') as f:
-            wb = load_workbook(f)
+            return load_workbook(f)
     else:
         with open(template_path, 'rb') as f:
             wb = load_workbook(f)
         ws = wb.active
-        for key, cell in CELL_MAP.items():
-            if key in data:
-                if key == 'client_logo':
-                    continue
-                value = data[key]
-                if isinstance(value, bool):
-                    value = "Yes" if value else "No"
-                target_cell = get_top_left_cell(ws, cell)
-                ws[target_cell] = value
-                if key in ['location']:
-                    ws[target_cell].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                elif key == 'user':
-                    ws[target_cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    ws = wb.active
-    # Insert client logo
+        _populate_basic_template_fields(ws, data)
+        return wb
+
+
+def _populate_basic_template_fields(ws, data):
+    """Populate basic fields when creating from template"""
+    for key, cell in CELL_MAP.items():
+        if key in data and key != 'client_logo':
+            value = data[key]
+            if isinstance(value, bool):
+                value = "Yes" if value else "No"
+            target_cell = get_top_left_cell(ws, cell)
+            ws[target_cell] = value
+            _apply_cell_alignment(ws, target_cell, key)
+
+
+def _apply_cell_alignment(ws, cell, key):
+    """Apply specific alignment based on field type"""
+    if key in ['location']:
+        ws[cell].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    elif key == 'user':
+        ws[cell].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+
+def _handle_basic_fields(ws, data):
+    """Handle basic field population for existing workbooks"""
+    for key, cell in CELL_MAP.items():
+        if key in data and key != 'client_logo':
+            value = data[key]
+            if isinstance(value, bool):
+                value = "Yes" if value else "No"
+            target_cell = get_top_left_cell(ws, cell)
+            ws[target_cell] = value
+            _apply_cell_alignment(ws, target_cell, key)
+
+
+def _handle_client_logo(ws, data):
+    """Handle client logo insertion"""
     client_logo_url = data.get('client_logo')
     if client_logo_url:
-        insert_client_logo(ws, client_logo_url, cell="I3", end_cell="L7")
+        insert_client_logo(ws, client_logo_url, cell="I4", end_cell="L7")
     else:
         logger.info("No client logo URL provided.")
 
+
+def _handle_status_fields(ws, data, extra_rows):
+    """Handle status field checkboxes and comments"""
     for field, row in STATUS_FIELDS.items():
-        value = data.get(field, None)
-        for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
-            cell = f'{col}{row}'
-            target_cell = get_top_left_cell(ws, cell)
-            ws[target_cell] = TICK if ((value is True and col == 'I') or (value is False and col == 'J') or (
-                    value is None and col == 'K')) else ""
-            ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
-        comment_key = COMMENT_FIELD_MAP.get(field)
-        if comment_key is not None and comment_key in data:
-            comment_cell = f"L{row}"
-            top_left_comment_cell = get_top_left_cell(ws, comment_cell)
-            ws[top_left_comment_cell] = data[comment_key]
-            ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
-            if extra_rows == 0:
-                autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=15)
-            else:
-                offset_row = row + extra_rows
-                offset_cell = f"L{offset_row}"
-                top_left_offset_cell = get_top_left_cell(ws, offset_cell)
-                autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
+        _populate_status_checkboxes(ws, data, field, row)
+        _populate_status_comments(ws, data, field, row, extra_rows)
+
+
+def _populate_status_checkboxes(ws, data, field, row):
+    """Populate status checkboxes (Yes/No/N/A)"""
+    value = data.get(field, None)
+    for col, cond in zip(['I', 'J', 'K'], [True, False, None]):
+        cell = f'{col}{row}'
+        target_cell = get_top_left_cell(ws, cell)
+        ws[target_cell] = TICK if ((value is True and col == 'I') or
+                                   (value is False and col == 'J') or
+                                   (value is None and col == 'K')) else ""
+        ws[target_cell].alignment = Alignment(horizontal='center', vertical='center')
+
+
+def _populate_status_comments(ws, data, field, row, extra_rows):
+    """Populate status field comments"""
+    comment_key = COMMENT_FIELD_MAP.get(field)
+    if comment_key is not None and comment_key in data:
+        comment_cell = f"L{row}"
+        top_left_comment_cell = get_top_left_cell(ws, comment_cell)
+        ws[top_left_comment_cell] = data[comment_key]
+        ws[top_left_comment_cell].alignment = Alignment(wrap_text=True, vertical='top')
+
+        if extra_rows == 0:
+            autofit_row_height(ws, top_left_comment_cell, data[comment_key], multiplier=15)
+        else:
+            offset_row = row + extra_rows
+            offset_cell = f"L{offset_row}"
+            top_left_offset_cell = get_top_left_cell(ws, offset_cell)
+            autofit_row_height(ws, top_left_offset_cell, data[comment_key], multiplier=15)
+
+
+def _handle_items_section(ws, items, extra_rows):
+    """Handle items table population"""
     write_items_to_excel(ws, items[:ITEMS_PER_PAGE], start_row=9)
-    extra_rows = max(0, len(items) - ITEMS_PER_PAGE)
+
+
+def _handle_image_sections(ws, data, extra_rows):
+    """Handle all image insertions"""
     image_start_row = 28 + extra_rows
     image_end_row = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
     image_end_cell = f"L{image_end_row}"
+
     logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
+
     image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
@@ -121,23 +206,51 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
     ]
     image_urls = [url for url in image_urls if url]
     create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=7)
+
+
+def _handle_date_field(ws):
+    """Set current date"""
     ws['J44'] = datetime.now().strftime("%Y-%m-%d")
     ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    default_storage.save(relative_path, ContentFile(output.read()))
-    if len(items) > ITEMS_PER_PAGE:
-        append_extra_items_to_excel(relative_path, items[ITEMS_PER_PAGE:], 9 + ITEMS_PER_PAGE)
+
+
+def _save_workbook(wb, relative_path):
+    """Save workbook to storage"""
+    output = None
+    try:
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        default_storage.save(relative_path, ContentFile(output.read()))
+    finally:
+        if output:
+            output.close()
+
+
+def _handle_final_operations(relative_path, data, items):
+    """Handle comments, damages, and additional sheets"""
+    wb_final = None
+    try:
         with default_storage.open(relative_path, 'rb') as f:
-            wb = load_workbook(f)
-            ws = wb.active
-        extra_rows = len(items) - ITEMS_PER_PAGE
-    else:
-        with default_storage.open(relative_path, 'rb') as f:
-            wb = load_workbook(f)
-            ws = wb.active
-        extra_rows = 0
+            wb_final = load_workbook(f)
+            ws = wb_final.active
+
+        extra_rows = len(items) - ITEMS_PER_PAGE if len(items) > ITEMS_PER_PAGE else 0
+
+        _handle_comments_section(ws, data, extra_rows)
+        _handle_page_break(ws)
+        _handle_damages_section(ws, data)
+        _handle_additional_sheets(wb_final, data)
+
+        _save_final_workbook(wb_final, relative_path)
+
+    finally:
+        if wb_final:
+            wb_final.close()
+
+
+def _handle_comments_section(ws, data, extra_rows):
+    """Handle comments section"""
     comments_row = 26 + extra_rows
     comments_cell = f"A{comments_row}"
     if 'comments' in data:
@@ -145,33 +258,44 @@ def save_report_to_excel(data, file_path=None, template_path='delivery_report_te
         ws[comments_cell].alignment = Alignment(wrap_text=True, vertical='top')
         autofit_row_height(ws, comments_cell, data['comments'], multiplier=1.5)
 
-    # Insert a manual page break before the damages section
+
+def _handle_page_break(ws):
+    """Insert manual page break"""
     ws.row_breaks.append(Break(id=ws.max_row + 1))
 
-    # Create the Damages section if applicable
+
+def _handle_damages_section(ws, data):
+    """Handle damages section creation"""
     write_damages_section(ws, data)
 
-    # Insert CMR image if available
+
+def _handle_additional_sheets(wb, data):
+    """Handle CMR and delivery slip images"""
     cmr_url = data.get('cmr_image')
     if cmr_url:
-        insert_cmr_sheet(ws, cmr_url)
+        insert_cmr_sheet(wb.active, cmr_url)
 
-    # Insert Delivery Slip images if available
     delivery_slip_images = data.get('delivery_slip_images_urls', [])
     if delivery_slip_images:
         insert_images_in_single_sheet(wb, delivery_slip_images, "Delivery Slips")
 
-    # Add additional images if available
     additional_images = data.get('additional_images_urls', [])
     if additional_images:
         insert_images_in_single_sheet(wb, additional_images, "Additional Images")
 
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    with default_storage.open(relative_path, 'wb') as f:
-        f.write(output.read())
-    return abs_path
+
+def _save_final_workbook(wb, relative_path):
+    """Save final workbook with all modifications"""
+    output_final = None
+    try:
+        output_final = io.BytesIO()
+        wb.save(output_final)
+        output_final.seek(0)
+        with default_storage.open(relative_path, 'wb') as f:
+            f.write(output_final.read())
+    finally:
+        if output_final:
+            output_final.close()
 
 
 def write_items_to_excel(ws, items, start_row):
@@ -184,50 +308,54 @@ def write_items_to_excel(ws, items, start_row):
 
 
 def append_extra_items_to_excel(file_path, extra_items, insert_row):
-    from openpyxl.styles.borders import Border, Side
-    with default_storage.open(file_path, 'rb') as f:
-        wb = load_workbook(f)
-        ws = wb.active
-        affected_merges = []
-        for rng in list(ws.merged_cells.ranges):
-            if rng.min_row >= insert_row:
-                affected_merges.append((rng.min_row, rng.min_col, rng.max_row, rng.max_col))
-                ws.unmerge_cells(str(rng))
-        ws.insert_rows(insert_row, amount=len(extra_items))
-        row_above = insert_row - 1
-        for i in range(len(extra_items)):
-            copy_row_style(ws, row_above, insert_row + i, min_col=1, max_col=12)
-        for i in range(len(extra_items)):
-            row = insert_row + i
-            ws.merge_cells(f"A{row}:B{row}")
-            ws.merge_cells(f"C{row}:D{row}")
-            ws.merge_cells(f"F{row}:H{row}")
-            ws.merge_cells(f"J{row}:L{row}")
-            cell = ws.cell(row=row, column=12)
-            original = cell.border
-            cell.border = Border(
-                left=original.left,
-                right=Side(style="thick"),
-                top=original.top,
-                bottom=original.bottom,
-                diagonal=original.diagonal,
-                diagonal_direction=original.diagonal_direction,
-                outline=original.outline,
-                vertical=original.vertical,
-                horizontal=original.horizontal,
-            )
-        for min_row, min_col, max_row, max_col in affected_merges:
-            new_min_row = min_row + len(extra_items)
-            new_max_row = max_row + len(extra_items)
-            start_cell = f"{get_column_letter(min_col)}{new_min_row}"
-            end_cell = f"{get_column_letter(max_col)}{new_max_row}"
-            ws.merge_cells(f"{start_cell}:{end_cell}")
-        write_items_to_excel(ws, extra_items, insert_row)
-        output = io.BytesIO()
-        wb.save(output)
-        output.seek(0)
-        with default_storage.open(file_path, 'wb') as f:
-            f.write(output.read())
+    wb = None
+    try:
+        with default_storage.open(file_path, 'rb') as f:
+            wb = load_workbook(f)
+            ws = wb.active
+            affected_merges = []
+            for rng in list(ws.merged_cells.ranges):
+                if rng.min_row >= insert_row:
+                    affected_merges.append((rng.min_row, rng.min_col, rng.max_row, rng.max_col))
+                    ws.unmerge_cells(str(rng))
+            ws.insert_rows(insert_row, amount=len(extra_items))
+            row_above = insert_row - 1
+            for i in range(len(extra_items)):
+                copy_row_style(ws, row_above, insert_row + i, min_col=1, max_col=12)
+            for i in range(len(extra_items)):
+                row = insert_row + i
+                ws.merge_cells(f"A{row}:B{row}")
+                ws.merge_cells(f"C{row}:D{row}")
+                ws.merge_cells(f"F{row}:H{row}")
+                ws.merge_cells(f"J{row}:L{row}")
+                cell = ws.cell(row=row, column=12)
+                original = cell.border
+                cell.border = Border(
+                    left=original.left,
+                    right=Side(style="thick"),
+                    top=original.top,
+                    bottom=original.bottom,
+                    diagonal=original.diagonal,
+                    diagonal_direction=original.diagonal_direction,
+                    outline=original.outline,
+                    vertical=original.vertical,
+                    horizontal=original.horizontal,
+                )
+            for min_row, min_col, max_row, max_col in affected_merges:
+                new_min_row = min_row + len(extra_items)
+                new_max_row = max_row + len(extra_items)
+                start_cell = f"{get_column_letter(min_col)}{new_min_row}"
+                end_cell = f"{get_column_letter(max_col)}{new_max_row}"
+                ws.merge_cells(f"{start_cell}:{end_cell}")
+            write_items_to_excel(ws, extra_items, insert_row)
+            output = io.BytesIO()
+            wb.save(output)
+            output.seek(0)
+            with default_storage.open(file_path, 'wb') as f:
+                f.write(output.read())
+    finally:
+        if wb:
+            wb.close()
 
 
 def copy_row_style(ws, src_row, dest_row, min_col=1, max_col=12):
@@ -268,14 +396,22 @@ def autofit_row_height(ws, cell, text, multiplier=14):
 
 
 def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", ext="xlsx"):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     if file_path:
-        abs_path = Path(file_path)
-        relative_path = abs_path.relative_to(settings.MEDIA_ROOT)
+        # If file_path is provided, use it as relative path
+        if isinstance(file_path, Path):
+            relative_path = str(file_path)
+        else:
+            relative_path = file_path
+        # For S3, we don't need absolute paths
+        abs_path = relative_path
     else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        relative_path = Path(subdir) / f"delivery_report_{timestamp}.{ext}"
-        abs_path = Path(settings.MEDIA_ROOT) / relative_path
-    return str(relative_path), str(abs_path)
+        # Generate new filename
+        relative_path = f"{subdir}/delivery_report_{timestamp}.{ext}"
+        abs_path = relative_path
+
+    return relative_path, abs_path
 
 
 def set_table_outer_border(ws, min_row, max_row, min_col, max_col, border_side):

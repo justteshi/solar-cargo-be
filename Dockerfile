@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 RUN apt-get update && apt-get install -y libreoffice && apt-get clean
+RUN apt-get update && apt-get install -y libmagic1 libmagic-dev
 
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
