@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from django.conf import settings
 from .models import DeliveryReport, Location
-from .utils.main_utils import get_username_from_id
+from .utils.user_utils import get_username_from_id, get_signature_from_user_id
 from .utils.excel_utils import save_report_to_excel
 from .utils.pdf_utils import convert_excel_to_pdf
 
@@ -49,6 +49,7 @@ class ReportDataService:
         # Get username
         user_id = report_data.get('user')
         report_data['user'] = get_username_from_id(user_id)
+        report_data['user_signature'] = get_signature_from_user_id(user_id)
 
         # Get location info
         location_id = report_data.get('location')

@@ -69,10 +69,12 @@ def save_report_to_excel(data, file_path=None, template_path=None):
         # Handle different sections
         _handle_basic_fields(ws, data)
         _handle_client_logo(ws, data)
+        _handle_client_name(ws, data)
         _handle_status_fields(ws, data, extra_rows)
         _handle_items_section(ws, items, extra_rows)
         _handle_image_sections(ws, data, extra_rows)
         _handle_date_field(ws)
+        _handle_signature(ws, data, extra_rows)
 
         # Save initial workbook
         _save_workbook(wb, relative_path)
@@ -137,6 +139,16 @@ def _handle_basic_fields(ws, data):
             target_cell = get_top_left_cell(ws, cell)
             ws[target_cell] = value
             _apply_cell_alignment(ws, target_cell, key)
+
+
+def _handle_client_name(ws, data):
+    """Insert client name"""
+    client_name = data.get('location_client_name')
+    if client_name:
+        cell = ws['I3']
+        cell.value = client_name
+        cell.font = Font(size=12, name='Arial')
+        cell.alignment = Alignment(horizontal='center', vertical='center')
 
 
 def _handle_client_logo(ws, data):
@@ -212,6 +224,58 @@ def _handle_date_field(ws):
     """Set current date"""
     ws['J44'] = datetime.now().strftime("%Y-%m-%d")
     ws['J44'].alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+
+def _handle_signature(ws, data, extra_rows):
+    """Insert user signature image, keeping height and stretching width to cell range."""
+    signature_url = data.get('user_signature')
+    if not signature_url:
+        logger.info("No signature found for user.")
+        return
+
+    anchor_cell = f'G{43 + extra_rows}'
+    start_col = column_index_from_string('G')
+    start_row = 43 + extra_rows
+    end_col = column_index_from_string('H')
+    end_row = 45 + extra_rows
+
+    total_width = sum(
+        int((ws.column_dimensions[get_column_letter(col)].width or 8.43) * 7)
+        for col in range(start_col, end_col + 1)
+    )
+    total_height = sum(
+        int((ws.row_dimensions[row].height or 15) * 1.33)
+        for row in range(start_row, end_row + 1)
+    )
+
+    img_bytes = BytesIO(fetch_image_bytes(signature_url))
+    if not img_bytes.getbuffer().nbytes:
+        logger.warning(f"Signature image could not be loaded from {signature_url}")
+        return
+
+    try:
+        pil_img = PILImage.open(img_bytes)
+        pil_img = ImageOps.exif_transpose(pil_img)
+        pil_img = pil_img.convert("RGBA")
+
+        # Resize width to total_width, keep original height (or limit to total_height)
+        new_height = min(pil_img.height, total_height)
+        pil_img = pil_img.resize((total_width, new_height), PILImage.LANCZOS)
+
+        # Center vertically on transparent canvas if needed
+        canvas = PILImage.new("RGBA", (total_width, total_height), (255, 255, 255, 0))
+        y = (total_height - new_height) // 2
+        canvas.paste(pil_img, (0, y), pil_img)
+
+        output_img = BytesIO()
+        canvas.save(output_img, format="PNG")
+        output_img.seek(0)
+
+        xl_img = XLImage(output_img)
+        xl_img.anchor = anchor_cell
+        ws.add_image(xl_img)
+    except Exception as e:
+        logger.error(f"Failed to insert signature image: {e}")
 
 
 def _save_workbook(wb, relative_path):
