@@ -3,6 +3,16 @@ from django.contrib import admin
 from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportItem, DeliveryReportDamageImage, Location, Supplier
 from django.utils.html import format_html
 from django.urls import reverse
+from django.core.exceptions import ValidationError
+
+class NoExtraButtonsAdmin(admin.ModelAdmin):
+    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+        extra_context = extra_context or {}
+        # Hide "Save and add another" and "Save and continue editing"
+        extra_context['show_save_and_add_another'] = False
+        extra_context['show_save_and_continue'] = False
+        return super().changeform_view(request, object_id, form_url, extra_context=extra_context)
+
 
 class DeliveryReportAdminForm(forms.ModelForm):
     class Meta:
@@ -11,6 +21,32 @@ class DeliveryReportAdminForm(forms.ModelForm):
         labels = {
             'supplier_fk': 'Supplier',      # ← тук сменяш лейбъла
         }
+
+class ItemAdminForm(forms.ModelForm):
+    class Meta:
+        model = Item
+        fields = '__all__'
+
+    def clean_location(self):
+        location = self.cleaned_data.get('location')
+        if not location:
+            raise ValidationError("You must assign a Location to this Item.")
+        return location
+
+
+class ReadOnlyItemInline(admin.TabularInline):
+    model = Item
+    extra = 0
+    can_delete = False
+    readonly_fields = ['name']
+    show_change_link = True  # Adds a link to the full Item edit page
+    verbose_name_plural = 'Items available for this location'
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 class DeliveryReportImageInline(admin.TabularInline):
     model = DeliveryReportImage
@@ -31,7 +67,7 @@ class DeliveryReportDamageImageInline(admin.TabularInline):
     verbose_name_plural = 'Damage Images'
 
 @admin.register(DeliveryReport)
-class DeliveryReportAdmin(admin.ModelAdmin):
+class DeliveryReportAdmin(NoExtraButtonsAdmin):
     form = DeliveryReportAdminForm
     inlines = [DeliveryReportImageInline, DeliveryReportItemInline, DeliveryReportDamageImageInline]
 
@@ -63,18 +99,30 @@ class DeliveryReportAdmin(admin.ModelAdmin):
             return obj.supplier_fk.name
         return obj.supplier or '-'
 
-
 @admin.register(Item)
-class ItemAdmin(admin.ModelAdmin):
+class ItemAdmin(NoExtraButtonsAdmin):
+    form = ItemAdminForm
     search_fields = ['name']
-    list_display = ['name']
+    list_display = ['name', 'location']
+    list_filter = ['location']
+
+class SupplierAdminForm(forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+        widgets = {
+            'locations': forms.CheckboxSelectMultiple
+        }
 
 @admin.register(Supplier)
-class SupplierAdmin(admin.ModelAdmin):
-    search_fields = ['name']   # autocomplete ще търси по това поле
+class SupplierAdmin(NoExtraButtonsAdmin):
+    search_fields = ['name']
     list_display = ['name']
+    autocomplete_fields = ['locations']
+    list_filter = ['locations']
 
 @admin.register(Location)
-class LocationAdmin(admin.ModelAdmin):
-    search_fields = ['name']   # трябва, защото го ползваме в autocomplete_fields
+class LocationAdmin(NoExtraButtonsAdmin):
+    inlines = [ReadOnlyItemInline]
+    search_fields = ['name']
     list_display = ['name']
