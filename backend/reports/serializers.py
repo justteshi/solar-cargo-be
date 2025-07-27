@@ -132,6 +132,11 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         read_only=True,
         help_text='Name of the assigned location'
     )
+    location_client_name = serializers.CharField(
+        source='location.client_name',
+        read_only=True,
+        help_text='Name of location client name'
+    )
 
     delivery_slip_images_input = OptionalImageListField(
         child=serializers.ImageField(),
@@ -169,6 +174,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'id',
             'location',
             'location_name',
+            'location_client_name',
             'checking_company',
             'supplier_input',
             'supplier',
@@ -309,7 +315,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
 
         # Create related items
         for item in items_data:
-            item_obj, _ = Item.objects.get_or_create(name=item['name'])
+            item_obj, _ = Item.objects.get_or_create(name=item['name'], location=location)
             DeliveryReportItem.objects.create(
                 delivery_report=report,
                 item=item_obj,
@@ -340,3 +346,4 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
 
 class ItemAutocompleteFilterSerializer(serializers.Serializer):
     q = serializers.CharField(required=True, min_length=2, help_text="Search term for item name")
+    location = serializers.CharField(required=False)  # optional or required based on your needs
