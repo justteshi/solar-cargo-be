@@ -206,34 +206,6 @@ def insert_cmr_sheet(ws, cmr_url=None):
         logger.error(f"Error inserting CMR image from {cmr_url}: {e}")
 
 
-def _is_valid_image_content(content):
-    """
-    Basic validation of image file content.
-    """
-    if len(content) < 10:
-        return False
-
-    # Check for common image signatures
-    image_signatures = [
-        b'\xff\xd8\xff',  # JPEG
-        b'\x89\x50\x4e\x47',  # PNG
-        b'GIF87a', b'GIF89a',  # GIF
-        b'BM',  # BMP
-        b'RIFF',  # WEBP (partial)
-        b'II*\x00', b'MM\x00*'  # TIFF
-    ]
-
-    for sig in image_signatures:
-        if content.startswith(sig):
-            return True
-
-    # Special case for WEBP
-    if b'RIFF' in content[:12] and b'WEBP' in content[:12]:
-        return True
-
-    return False
-
-
 def setup_image_worksheet_page(img_ws):
     img_ws.page_setup.orientation = "portrait"
     img_ws.page_setup.paperSize = img_ws.PAPERSIZE_A4
