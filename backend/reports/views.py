@@ -160,6 +160,7 @@ class ItemAutocompleteView(ListAPIView):
 
         return queryset.order_by('name')[:10]
 
+
 @extend_schema(
     tags=["Download Reports"],
     description="Download the Excel file for a specific delivery report.",
@@ -288,7 +289,7 @@ def encode_file(file_field, filename):
 @permission_classes([IsAuthenticated])
 def download_report_media(request, report_id):
     """
-    Return media files as base64-encoded JSON.
+    Return media files as base64-encoded JSON, including all images associated with the report.
     """
     try:
         report = DeliveryReport.objects.get(pk=report_id)
@@ -297,23 +298,51 @@ def download_report_media(request, report_id):
 
     media_data = {}
 
-    # Single files
+    # Truck license plate image
+    if report.truck_license_plate_image:
+        encoded = encode_file(report.truck_license_plate_image, "truck_license_plate.jpg")
+        if encoded:
+            media_data.setdefault('license_plates', []).append({
+                **encoded,
+                "content_type": "image/jpeg"
+            })
+
+    # Trailer license plate image
+    if report.trailer_license_plate_image:
+        encoded = encode_file(report.trailer_license_plate_image, "trailer_license_plate.jpg")
+        if encoded:
+            media_data.setdefault('license_plates', []).append({
+                **encoded,
+                "content_type": "image/jpeg"
+            })
+
+    # Proof of delivery image
     if report.proof_of_delivery_image:
         encoded = encode_file(report.proof_of_delivery_image, "proof_of_delivery.jpg")
         if encoded:
-            media_data['delivery_proof'] = [encoded]
+            media_data['delivery_proof'] = [{
+                **encoded,
+                "content_type": "image/jpeg"
+            }]
 
+    # CMR image
     if report.cmr_image:
         encoded = encode_file(report.cmr_image, "cmr.jpg")
         if encoded:
-            media_data['cmr'] = [encoded]
+            media_data['cmr'] = [{
+                **encoded,
+                "content_type": "image/jpeg"
+            }]
 
     # Multiple files
     slip_images = []
     for i, img in enumerate(report.slip_images.all()):
         encoded = encode_file(img.image, f"slip_{i}.jpg")
         if encoded:
-            slip_images.append(encoded)
+            slip_images.append({
+                **encoded,
+                "content_type": "image/jpeg"
+            })
     if slip_images:
         media_data['delivery_slips'] = slip_images
 
@@ -321,7 +350,10 @@ def download_report_media(request, report_id):
     for i, img in enumerate(report.damage_images.all()):
         encoded = encode_file(img.image, f"damage_{i}.jpg")
         if encoded:
-            damage_images.append(encoded)
+            damage_images.append({
+                **encoded,
+                "content_type": "image/jpeg"
+            })
     if damage_images:
         media_data['damage_images'] = damage_images
 
@@ -329,7 +361,10 @@ def download_report_media(request, report_id):
     for i, img in enumerate(report.additional_images.all()):
         encoded = encode_file(img.image, f"additional_{i}.jpg")
         if encoded:
-            additional_images.append(encoded)
+            additional_images.append({
+                **encoded,
+                "content_type": "image/jpeg"
+            })
     if additional_images:
         media_data['additional'] = additional_images
 
