@@ -156,7 +156,6 @@ class ItemAutocompleteView(ListAPIView):
         location = query_params.validated_data.get('location', None)
 
         queryset = Item.objects.all()
-        print(queryset)
         if q:
             queryset = queryset.filter(name__icontains=q)
 
