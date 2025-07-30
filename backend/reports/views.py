@@ -139,21 +139,25 @@ class HomePageView(TemplateView):
 @extend_schema(
     tags=["Items"],
     parameters=[
-        OpenApiParameter(name='q', description='Search term', required=True, type=str),
+        OpenApiParameter(name='q', description='Search term', required=False, type=str),
         OpenApiParameter(name='location', description='Location filter', required=False, type=str),
     ],
     responses=ItemSerializer(many=True),
 )
 class ItemAutocompleteView(ListAPIView):
     serializer_class = ItemSerializer
-    permission_classes = [AllowAny]  # Can be set IsAuthenticated if needed
+    permission_classes = [AllowAny]
 
     def get_queryset(self):
         query_params = ItemAutocompleteFilterSerializer(data=self.request.GET)
         query_params.is_valid(raise_exception=True)
-        q = query_params.validated_data['q']
+
+        q = query_params.validated_data.get('q', None)
         location = query_params.validated_data.get('location', None)
-        queryset = Item.objects.filter(name__icontains=q)
+
+        queryset = Item.objects.all()
+        if q:
+            queryset = queryset.filter(name__icontains=q)
 
         if location:
             queryset = queryset.filter(location=location)

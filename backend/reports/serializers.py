@@ -345,5 +345,10 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         return report
 
 class ItemAutocompleteFilterSerializer(serializers.Serializer):
-    q = serializers.CharField(required=True, min_length=2, help_text="Search term for item name")
-    location = serializers.CharField(required=False)  # optional or required based on your needs
+    q = serializers.CharField(
+        required=False,
+        min_length=2,
+        help_text="Search term for item name (min 2 characters)",
+        allow_blank=True
+    )
+    location = serializers.CharField(required=False, allow_blank=True)
