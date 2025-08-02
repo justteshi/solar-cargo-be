@@ -1,9 +1,13 @@
+import json
+
 from rest_framework import serializers
+
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
     DeliveryReportSlipImage, Supplier
-from drf_spectacular.utils import extend_schema_field
-from .utils.file_validators import validate_image_file, validate_file_name, FileValidationError
-import json
+from .utils.file_validators import FileValidationError, validate_image_file
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LocationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -289,6 +293,36 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'items_input': "This field is required when creating a DeliveryReport."
                 })
+
+        single_image_fields = [
+            'truck_license_plate_image',
+            'trailer_license_plate_image',
+            'proof_of_delivery_image',
+            'cmr_image',
+        ]
+        for field in single_image_fields:
+            img = data.get(field)
+            if img:
+                try:
+                    validate_image_file(img)
+                except FileValidationError as e:
+                    logger.error(f"Image validation failed for field '%s': %s", field, str(e))
+                    raise serializers.ValidationError({field: str(e)})
+
+        # Validate list image fields
+        list_image_fields = [
+            'delivery_slip_images_input',
+            'additional_images_input',
+            'damage_images_input',
+        ]
+        for field in list_image_fields:
+            files = data.get(field, [])
+            for idx, img in enumerate(files):
+                try:
+                    validate_image_file(img)
+                except FileValidationError as e:
+                    logger.error(f"Image validation failed for field '%s': %s", field, str(e))
+                    raise serializers.ValidationError({field: f"Image {idx + 1}: {str(e)}"})
 
         return data
 
