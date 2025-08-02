@@ -1,8 +1,7 @@
-import mimetypes
-import magic
-from django.core.exceptions import ValidationError
-from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
 import os
+
+import magic
+
 
 class FileValidationError(Exception):
     pass
@@ -109,32 +108,3 @@ def _validate_image_headers(file_content, mime_type):
             return True
 
     return False
-
-def validate_file_name(filename):
-    """
-    Validate filename for security issues.
-    """
-    if not filename:
-        raise FileValidationError("Filename cannot be empty")
-
-    if len(filename) > 255:
-        raise FileValidationError("Filename too long (max 255 characters)")
-
-    # Check for dangerous characters
-    dangerous_chars = ['..', '/', '\\', '<', '>', ':', '"', '|', '?', '*']
-    for char in dangerous_chars:
-        if char in filename:
-            raise FileValidationError(f"Filename contains invalid character: {char}")
-
-    # Check for reserved names (Windows)
-    reserved_names = {
-        'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3',
-        'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9',
-        'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6',
-        'LPT7', 'LPT8', 'LPT9'
-    }
-    name_without_ext = os.path.splitext(filename)[0].upper()
-    if name_without_ext in reserved_names:
-        raise FileValidationError(f"Filename uses reserved name: {filename}")
-
-    return True

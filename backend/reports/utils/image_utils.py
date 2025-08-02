@@ -80,22 +80,18 @@ def fetch_and_process_image(url, cell_width, cell_height):
     try:
         img_bytes = io.BytesIO(fetch_image_bytes(url))
         if not img_bytes.getbuffer().nbytes:
+            logger.warning(f"Image could not be loaded from {url}")
             return None
-            # Validate the fetched image content
-            try:
-                # Create a mock file object for validation
-                img_bytes.seek(0)
-                content = img_bytes.read(8192)
-                img_bytes.seek(0)
 
-                # Basic validation of image content
-                if not _is_valid_image_content(content):
-                    logger.warning(f"Invalid image content from {url}")
-                    return None
+        # Validate the fetched image content
+        img_bytes.seek(0)
+        content = img_bytes.read(8192)
+        img_bytes.seek(0)
 
-            except Exception as e:
-                logger.error(f"Image validation failed for {url}: {e}")
-                return None
+        if not _is_valid_image_content(content):
+            logger.warning(f"Invalid image content from {url}")
+            return None
+        # Open and process the image
         pil_img = PILImage.open(img_bytes)
         pil_img = ImageOps.exif_transpose(pil_img)
         pil_img = pil_img.convert("RGBA")
@@ -127,7 +123,6 @@ def insert_images_in_single_sheet(wb, images, sheet_title):
     image_height = max_page_height - descriptor_height
 
     # Process images in parallel first
-    processed_images = []
     with ThreadPoolExecutor(max_workers=min(4, len(images))) as executor:
         future_to_index = {}
         for idx, img_obj in enumerate(images):

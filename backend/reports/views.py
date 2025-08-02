@@ -1,11 +1,10 @@
+import base64
 import logging
 import os
 import tempfile
-import base64
 
-from django.core.exceptions import ObjectDoesNotExist
 from django.core.files.storage import default_storage
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample, OpenApiParameter, inline_serializer
@@ -28,7 +27,6 @@ from .serializers import (
     SupplierAutocompleteSerializer
 )
 from .services import ReportFileService, ReportDataService, ReportUpdateService
-from .utils.file_validators import validate_image_file, FileValidationError
 from .utils.plate_recognition_utils import recognize_plate, PlateRecognitionError
 
 logger = logging.getLogger(__name__)
@@ -474,15 +472,6 @@ class RecognizePlatesView(APIView):
         if not truck_image or not trailer_image:
             return Response(
                 {"error": "Both truck_plate_image and trailer_plate_image are required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        # Validate uploaded files for security
-        try:
-            validate_image_file(truck_image)
-            validate_image_file(trailer_image)
-        except FileValidationError as e:
-            return Response(
-                {"error": f"File validation failed: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
