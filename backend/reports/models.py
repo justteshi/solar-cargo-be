@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import models
+from .utils.private_storage import PrivateMediaStorage
 
 class Item(models.Model):
     name = models.CharField(max_length=255)
@@ -16,7 +17,7 @@ class Item(models.Model):
 
 class Location(models.Model):
     name = models.CharField(max_length=150)
-    logo = models.ImageField(upload_to='locations/logos/')
+    logo = models.ImageField(storage=PrivateMediaStorage(), upload_to='locations/logos/')
     client_name = models.CharField(max_length=512, null=True, blank=True)
 
     def __str__(self):
@@ -65,31 +66,37 @@ class DeliveryReport(models.Model):
     comments = models.TextField(blank=True)
 
     truck_license_plate_image = models.ImageField(
+        storage=PrivateMediaStorage(),
         upload_to='license_plates/truck/',
         null=True,
         blank=True)
     trailer_license_plate_image = models.ImageField(
+        storage=PrivateMediaStorage(),
         upload_to='license_plates/trailer/',
         null=True,
         blank=True)
 
     proof_of_delivery_image = models.ImageField(
+        storage=PrivateMediaStorage(),
         upload_to='proof_of_delivery/',
         null=True,
         blank=True)
 
     cmr_image = models.ImageField(
+        storage=PrivateMediaStorage(),
         upload_to='cmr/',
         null=True,
         blank=True)
 
     excel_report_file = models.FileField(
+        storage=PrivateMediaStorage(),
         upload_to='delivery_reports/',
         null=True,
         blank=True,
         # editable=False
     )
     pdf_report_file = models.FileField(
+        storage=PrivateMediaStorage(),
         upload_to='delivery_reports/PDF files/',
         null=True,
         blank=True,
@@ -143,7 +150,7 @@ class DeliveryReportDamageImage(models.Model):
         on_delete=models.CASCADE,
         related_name='damage_images'
     )
-    image = models.ImageField(upload_to='damage_images/')
+    image = models.ImageField(storage=PrivateMediaStorage(), upload_to='damage_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 class DeliveryReportSlipImage(models.Model):
@@ -152,13 +159,13 @@ class DeliveryReportSlipImage(models.Model):
         on_delete=models.CASCADE,
         related_name='slip_images'
     )
-    image = models.ImageField(upload_to='delivery_slip/')
+    image = models.ImageField(storage=PrivateMediaStorage(), upload_to='delivery_slip/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 
 class DeliveryReportImage(models.Model):
     delivery_report = models.ForeignKey(DeliveryReport, on_delete=models.CASCADE, related_name='additional_images')
-    image = models.ImageField(upload_to='additional_images/')
+    image = models.ImageField(storage=PrivateMediaStorage(), upload_to='additional_images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
 class DeliveryReportItem(models.Model):
