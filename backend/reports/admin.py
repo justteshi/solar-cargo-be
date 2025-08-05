@@ -4,6 +4,7 @@ from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportIte
 from django.utils.html import format_html
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from .services import ReportFileService, ReportDataService, ReportUpdateService
 
 class NoExtraButtonsAdmin(admin.ModelAdmin):
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
@@ -68,6 +69,9 @@ class DeliveryReportDamageImageInline(admin.TabularInline):
 
 @admin.register(DeliveryReport)
 class DeliveryReportAdmin(NoExtraButtonsAdmin):
+    class Media:
+        js = ('admin/js/delivery_report_loader.js',)
+
     form = DeliveryReportAdminForm
     inlines = [DeliveryReportImageInline, DeliveryReportItemInline, DeliveryReportDamageImageInline]
 
@@ -98,6 +102,37 @@ class DeliveryReportAdmin(NoExtraButtonsAdmin):
         if obj.supplier_fk:
             return obj.supplier_fk.name
         return obj.supplier or '-'
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+
+        try:
+            # Services for generating files
+            file_service = ReportFileService()
+            data_service = ReportDataService()
+            update_service = ReportUpdateService()
+
+            # Generate filenames and paths
+            filenames = file_service.generate_filenames()
+            excel_path = file_service.generate_excel_path(filenames['excel'])
+
+            # Prepare report data (you might need to use a serializer or manually collect the data)
+            from .serializers import DeliveryReportSerializer
+            serializer = DeliveryReportSerializer(obj)
+            prepared_data = data_service.prepare_report_data(serializer.data)
+
+            # Generate files
+            file_service.generate_files(prepared_data, excel_path)
+
+            # Update file fields in DB
+            update_service.update_report_files(
+                obj.id,
+                filenames['excel'],
+                filenames['pdf']
+            )
+        except Exception as e:
+            logger.error(f"Admin file generation failed for DeliveryReport {obj.id}: {e}")
+
 
 @admin.register(Item)
 class ItemAdmin(NoExtraButtonsAdmin):
