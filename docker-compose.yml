@@ -16,6 +16,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.webrouter.rule=Host(`solarcargo.commitandpray.com`)
+      - traefik.http.routers.webrouter.entrypoints=websecure
+      - traefik.http.routers.webrouter.tls=true
+      - traefik.http.middlewares.uploadlimit.buffering.maxRequestBodyBytes=104857600
+      - traefik.http.routers.webrouter.middlewares=uploadlimit
 
 
   db:
