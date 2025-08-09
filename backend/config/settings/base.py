@@ -38,6 +38,53 @@ REPORT_PATHS = {
     'TEMPLATE_PATH': 'delivery_report_template.xlsx',
 }
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',  # Changed back to INFO
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',  # Changed back to INFO
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'WARNING',  # Reduced to WARNING
+            'propagate': False,
+        },
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',  # Changed to WARNING
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'reports': {
+            'handlers': ['console'],
+            'level': 'INFO',  # Keep INFO for your app
+            'propagate': False,
+        },
+    },
+}
 # Image processing configuration
 IMAGE_CONFIG = {
     'MAX_WORKERS': 4,
