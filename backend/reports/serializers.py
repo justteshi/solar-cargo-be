@@ -52,8 +52,22 @@ class DeliveryReportSlipImageSerializer(serializers.ModelSerializer):
         model = DeliveryReportSlipImage
         fields = ['image', 'uploaded_at']
 
+
+class CustomImageField(serializers.ImageField):
+    def to_internal_value(self, data):
+        # Skip Django's default image validation and use our custom one
+        try:
+            validate_image_file(data)
+        except FileValidationError as e:
+            logger.error("Custom image validation failed: %s", str(e))
+            raise serializers.ValidationError("Invalid image file.")
+
+        # Now let Django handle the rest
+        from rest_framework.fields import FileField
+        return FileField.to_internal_value(self, data)
+
 class OptionalImageListField(serializers.ListField):
-    child = serializers.ImageField()
+    child = CustomImageField()
 
     def to_internal_value(self, data):
         # if swagger/curl gave you "", None or a single file,
@@ -71,6 +85,11 @@ class OptionalImageListField(serializers.ListField):
         return super().to_internal_value(files)
 
 class DeliveryReportSerializer(serializers.ModelSerializer):
+    # Override single image fields to use custom validation
+    truck_license_plate_image = CustomImageField(required=False, allow_null=True)
+    trailer_license_plate_image = CustomImageField(required=False, allow_null=True)
+    proof_of_delivery_image = CustomImageField(required=True)
+    cmr_image = CustomImageField(required=True)
     items_input = serializers.CharField(
         write_only=True,
         required=False,
@@ -143,7 +162,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     )
 
     delivery_slip_images_input = OptionalImageListField(
-        child=serializers.ImageField(),
         write_only=True,
         required=True,
         allow_empty=False,
@@ -306,7 +324,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 try:
                     validate_image_file(img)
                 except FileValidationError as e:
-                    logger.error(f"Image validation failed for field '%s': %s", field, str(e))
+                    logger.error("Image validation failed for field '%s': %s", field, str(e))
                     raise serializers.ValidationError({field: str(e)})
 
         # Validate list image fields
@@ -321,7 +339,7 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 try:
                     validate_image_file(img)
                 except FileValidationError as e:
-                    logger.error(f"Image validation failed for field '%s': %s", field, str(e))
+                    logger.error("Image validation failed for field '%s': %s", field, str(e))
                     raise serializers.ValidationError({field: f"Image {idx + 1}: {str(e)}"})
 
         return data
