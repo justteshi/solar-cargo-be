@@ -95,6 +95,7 @@ IMAGE_CONFIG = {
 }
 
 REST_FRAMEWORK = {
+    'EXCEPTION_HANDLER': 'reports.utils.exception_handler.custom_exception_handler',
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
