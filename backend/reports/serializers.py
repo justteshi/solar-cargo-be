@@ -60,7 +60,7 @@ class CustomImageField(serializers.ImageField):
             validate_image_file(data)
         except FileValidationError as e:
             logger.error("Custom image validation failed: %s", str(e))
-            raise serializers.ValidationError(str(e))
+            raise serializers.ValidationError("Invalid image file.")
 
         # Now let Django handle the rest
         from rest_framework.fields import FileField
