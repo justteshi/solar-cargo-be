@@ -149,6 +149,8 @@ def _handle_client_name(ws, data):
         cell.value = client_name
         cell.font = Font(size=12, name='Arial')
         cell.alignment = Alignment(horizontal='center', vertical='center')
+        border = Side(style="medium")
+        cell.border = Border(left=cell.border.left, right=border, top=cell.border.top, bottom=cell.border.bottom)
 
 
 def _handle_client_logo(ws, data):
@@ -209,15 +211,13 @@ def _handle_image_sections(ws, data, extra_rows):
     image_start_cell = f"A{image_start_row}"
     image_end_cell = f"L{image_end_row}"
 
-    logger.info(f"Image start cell: {image_start_cell}, Image end cell: {image_end_cell}")
-
     image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
         data.get('proof_of_delivery_image'),
     ]
     image_urls = [url for url in image_urls if url]
-    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=7)
+    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=9)
 
 
 def _handle_date_field(ws):
@@ -622,7 +622,7 @@ def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
     # Create a transparent canvas and paste the image centered
     canvas = PILImage.new("RGBA", (total_width, total_height), (255, 255, 255, 0))
     x = (total_width - pil_img.width) // 2
-    y = (total_height - pil_img.height) // 2
+    y = (total_height - pil_img.height) // 2 + 3  # Add 3 pixels to avoid cropping
     canvas.paste(pil_img, (x, y), pil_img)
 
     output = BytesIO()
@@ -631,3 +631,9 @@ def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
     xl_img = XLImage(output)
     xl_img.anchor = cell
     ws.add_image(xl_img)
+    # Apply border to the merged range
+    border = Side(style="medium")
+    for col in range(start_col, end_col + 1):
+        for row in range(start_row, end_row + 1):
+            cell = ws.cell(row=row, column=col)
+            cell.border = Border(left=cell.border.left, right=border, top=cell.border.top, bottom=cell.border.bottom)

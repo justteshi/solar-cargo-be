@@ -1,7 +1,9 @@
 import os
+import logging
 
 import magic
 
+logger = logging.getLogger(__name__)
 
 class FileValidationError(Exception):
     pass
@@ -37,20 +39,24 @@ def validate_image_file(file_obj):
     Validate uploaded image file for security and type checking.
     """
     if not file_obj:
+        logger.error("No file provided for image validation.")
         raise FileValidationError("No file provided")
 
     # Check file size (50MB limit)
     max_size = 50 * 1024 * 1024  # 50MB
     if file_obj.size > max_size:
+        logger.error(f"File too large: {file_obj.size} bytes. Max size is {max_size} bytes.")
         raise FileValidationError(f"File too large. Maximum size is {max_size // (1024*1024)}MB")
 
     # Get file extension from name
     file_name = getattr(file_obj, 'name', '')
     if not file_name:
+        logger.error("File must have a name for validation.")
         raise FileValidationError("File must have a name")
 
     ext = os.path.splitext(file_name)[1].lower()
     if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        logger.error(f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}")
         raise FileValidationError(f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_IMAGE_EXTENSIONS)}")
 
     # Read file content for MIME type detection
@@ -62,15 +68,21 @@ def validate_image_file(file_obj):
     try:
         detected_mime = magic.from_buffer(file_content, mime=True)
     except Exception as e:
+        logger.error(f"Could not detect file type: {e}")
         raise FileValidationError(f"Could not detect file type: {e}")
 
     # Validate MIME type
     if detected_mime not in ALLOWED_IMAGE_MIMETYPES:
+        logger.error(f"Invalid file type: {detected_mime}. Must be an image file.")
         raise FileValidationError(f"Invalid file type: {detected_mime}. Must be an image file")
 
     # Cross-validate extension with MIME type
     expected_extensions = MIME_TO_EXTENSION.get(detected_mime, [])
     if ext not in expected_extensions:
+        logger.error(
+            f"File extension {ext} doesn't match detected type {detected_mime}. "
+            f"Expected extensions: {', '.join(expected_extensions)}"
+        )
         raise FileValidationError(
             f"File extension {ext} doesn't match detected type {detected_mime}. "
             f"Expected extensions: {', '.join(expected_extensions)}"
@@ -78,8 +90,8 @@ def validate_image_file(file_obj):
 
     # Additional security checks for image headers
     if not _validate_image_headers(file_content, detected_mime):
+        logger.error("File appears to be corrupted or not a valid image.")
         raise FileValidationError("File appears to be corrupted or not a valid image")
-
     return True
 
 def _validate_image_headers(file_content, mime_type):
