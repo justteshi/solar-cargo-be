@@ -14,8 +14,8 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 import functools
 
-# handle 200mpx pictures
-PILImage.MAX_IMAGE_PIXELS = 200000000
+# max allowed image size to prevent DoS attacks
+PILImage.MAX_IMAGE_PIXELS = 50000000
 
 logger = logging.getLogger(__name__)
 
