@@ -43,7 +43,7 @@ def validate_image_file(file_obj):
         raise FileValidationError("No file provided")
 
     # Check file size (50MB limit)
-    max_size = 50 * 1024 * 1024  # 50MB
+    max_size = 20 * 1024 * 1024  # 20MB
     if file_obj.size > max_size:
         logger.error(f"File too large: {file_obj.size} bytes. Max size is {max_size} bytes.")
         raise FileValidationError(f"File too large. Maximum size is {max_size // (1024*1024)}MB")
