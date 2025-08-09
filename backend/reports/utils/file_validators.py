@@ -1,5 +1,6 @@
 import os
 import logging
+from PIL import Image as PILImage
 
 import magic
 
@@ -42,7 +43,7 @@ def validate_image_file(file_obj):
         logger.error("No file provided for image validation.")
         raise FileValidationError("No file provided")
 
-    # Check file size (50MB limit)
+    # Check file size (20MB limit)
     max_size = 20 * 1024 * 1024  # 20MB
     if file_obj.size > max_size:
         logger.error(f"File too large: {file_obj.size} bytes. Max size is {max_size} bytes.")
@@ -92,6 +93,16 @@ def validate_image_file(file_obj):
     if not _validate_image_headers(file_content, detected_mime):
         logger.error("File appears to be corrupted or not a valid image.")
         raise FileValidationError("File appears to be corrupted or not a valid image")
+    try:
+        file_obj.seek(0)
+        with PILImage.open(file_obj) as img:
+            width, height = img.size
+            total_pixels = width * height
+            if total_pixels > 50_000_000:  # 50 million pixels
+                logger.error(f"Image has too many pixels: {total_pixels}. Max allowed is 50 million.")
+                raise FileValidationError("Image resolution is too high. Maximum allowed is 50 million pixels.")
+    except Exception as e:
+        raise FileValidationError(str(e))
     return True
 
 def _validate_image_headers(file_content, mime_type):
