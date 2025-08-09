@@ -1,6 +1,6 @@
 import os
 import logging
-from PIL import Image as PILImage
+from PIL import Image as PILImage, Image
 
 import magic
 
@@ -34,6 +34,7 @@ MIME_TO_EXTENSION = {
     'image/webp': ['.webp'],
     'image/tiff': ['.tiff', '.tif']
 }
+Image.MAX_IMAGE_PIXELS = None  # Set to None to disable the limit, or set a higher value if needed
 
 def validate_image_file(file_obj):
     """
