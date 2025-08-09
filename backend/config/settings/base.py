@@ -53,24 +53,24 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'INFO',  # Changed back to INFO
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',  # Changed back to INFO
+        'level': 'INFO',
     },
     'loggers': {
         'django': {
             'handlers': ['console'],
-            'level': 'WARNING',  # Reduced to WARNING
+            'level': 'WARNING',
             'propagate': False,
         },
         'django.request': {
             'handlers': ['console'],
-            'level': 'WARNING',  # Changed to WARNING
+            'level': 'WARNING',
             'propagate': False,
         },
         'django.db.backends': {
@@ -80,7 +80,7 @@ LOGGING = {
         },
         'reports': {
             'handlers': ['console'],
-            'level': 'INFO',  # Keep INFO for your app
+            'level': 'INFO',
             'propagate': False,
         },
     },
