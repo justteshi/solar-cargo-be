@@ -20,4 +20,11 @@ COPY ./delivery_report_template.xlsx /code/delivery_report_template.xlsx
 # (Optional) Ensure it's executable
 RUN chmod +x /wait-for-db.py
 
+# Create unprivileged user and set ownership of /code so the app runs as non-root
+RUN groupadd -r app && useradd -r -g app -d /home/app -s /sbin/nologin app \
+    && mkdir -p /home/app && chown -R app:app /code /home/app
+
+# Switch to non-root user
+USER app
+
 EXPOSE 5000

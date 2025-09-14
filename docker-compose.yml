@@ -68,7 +68,7 @@ services:
       sh -c "echo 'Waiting for Redis...' && \
              until redis-cli -h redis ping | grep -q PONG; do echo 'redis not ready, sleeping 1s'; sleep 1; done; \
              echo 'Redis is ready'; export PYTHONPATH=/code/backend; \
-             celery -A config.celery worker --loglevel=info --concurrency=2"
+             celery -A config.celery worker --loglevel=info --concurrency=1"
     env_file:
       - .env
     environment:
