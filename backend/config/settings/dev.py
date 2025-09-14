@@ -3,6 +3,11 @@ from .base import *
 DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'solarcargo.commitandpray.com']
+INSTALLED_APPS += ['storages']
+
+# Celery configuration (use redis service from docker-compose by default)
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL') or 'redis://redis:6379/0'
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND') or 'redis://redis:6379/1'
 
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')

@@ -35,7 +35,9 @@ INSTALLED_APPS = [
 REPORT_PATHS = {
     'EXCEL_SUBDIR': 'delivery_reports_excel',
     'PDF_SUBDIR': 'delivery_reports_pdf',
-    'TEMPLATE_PATH': 'delivery_report_template.xlsx',
+    # Template file lives at the project root (one level above backend/). Use an absolute path so
+    # worker containers with different working directories can locate it.
+    'TEMPLATE_PATH': str(Path(BASE_DIR).parent.joinpath('delivery_report_template.xlsx')),
 }
 
 LOGGING = {

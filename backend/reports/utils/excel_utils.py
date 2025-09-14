@@ -11,6 +11,14 @@ from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.utils import get_column_letter, column_index_from_string
 from openpyxl.drawing.image import Image as XLImage
 from PIL import Image as PILImage, ImageOps
+
+# Pillow resampling compatibility
+try:
+    RESAMPLE = PILImage.Resampling.LANCZOS
+except Exception:
+    # Older Pillow exposes LANCZOS directly or uses ANTIALIAS
+    RESAMPLE = getattr(PILImage, 'LANCZOS', getattr(PILImage, 'ANTIALIAS', 1))
+
 from openpyxl.worksheet.pagebreak import Break
 
 from .image_utils import fetch_image_bytes, create_collage_of_images, insert_cmr_sheet, insert_images_in_single_sheet
@@ -95,18 +103,35 @@ def save_report_to_excel(data, file_path=None, template_path=None):
 
 def _load_or_create_workbook(relative_path, abs_path, template_path, data):
     """Load existing workbook or create from template"""
+    # If already saved in storage (S3/local storage), load from there
     if default_storage.exists(relative_path):
         with default_storage.open(relative_path, 'rb') as f:
             return load_workbook(f)
-    elif Path(abs_path).exists():
+
+    # If a local absolute path exists, load it
+    if Path(abs_path).exists():
         with open(abs_path, 'rb') as f:
             return load_workbook(f)
-    else:
-        with open(template_path, 'rb') as f:
-            wb = load_workbook(f)
-        ws = wb.active
-        _populate_basic_template_fields(ws, data)
-        return wb
+
+    # Use the configured template path (settings.REPORT_PATHS should provide an absolute path)
+    tpl = Path(template_path)
+
+    # Fallback: if configured path is not absolute or missing, try /code/delivery_report_template.xlsx
+    if not tpl.exists():
+        alt = Path('/code') / 'delivery_report_template.xlsx'
+        if alt.exists():
+            tpl = alt
+
+    if not tpl.exists():
+        logger.error("Excel template not found at %s", template_path)
+        raise FileNotFoundError(f"Excel template not found: {template_path}")
+
+    # Load template workbook and populate initial fields
+    with open(tpl, 'rb') as f:
+        wb = load_workbook(f)
+    ws = wb.active
+    _populate_basic_template_fields(ws, data)
+    return wb
 
 
 def _populate_basic_template_fields(ws, data):
@@ -260,7 +285,7 @@ def _handle_signature(ws, data, extra_rows):
 
         # Resize width to total_width, keep original height (or limit to total_height)
         new_height = min(pil_img.height, total_height)
-        pil_img = pil_img.resize((total_width, new_height), PILImage.LANCZOS)
+        pil_img = pil_img.resize((total_width, new_height), RESAMPLE)
 
         # Center vertically on transparent canvas if needed
         canvas = PILImage.new("RGBA", (total_width, total_height), (255, 255, 255, 0))
@@ -456,7 +481,7 @@ def autofit_row_height(ws, cell, text, multiplier=14):
             total_lines += 1
         else:
             total_lines += (len(line) - 1) // chars_per_line + 1
-    ws.row_dimensions[row_num].height = max(15, total_lines * multiplier)
+    ws.row_dimensions[row_num].height = max(15, int(total_lines * multiplier))
 
 
 def get_relative_and_abs_path(file_path=None, subdir="delivery_reports_excel", ext="xlsx"):
@@ -617,7 +642,7 @@ def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
     pil_img = PILImage.open(img_bytes)
     pil_img = ImageOps.exif_transpose(pil_img)
     pil_img = pil_img.convert("RGBA")
-    pil_img.thumbnail((total_width, total_height), PILImage.LANCZOS)
+    pil_img.thumbnail((total_width, total_height), RESAMPLE)
 
     # Create a transparent canvas and paste the image centered
     canvas = PILImage.new("RGBA", (total_width, total_height), (255, 255, 255, 0))
