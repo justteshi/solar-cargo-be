@@ -205,20 +205,52 @@ def _handle_items_section(ws, items, extra_rows):
 
 
 def _handle_image_sections(ws, data, extra_rows):
-    """Handle all image insertions"""
     image_start_row = 28 + extra_rows
-    image_end_row = 41 + extra_rows
+    image_end_row   = 41 + extra_rows
     image_start_cell = f"A{image_start_row}"
-    image_end_cell = f"L{image_end_row}"
+    image_end_cell   = f"L{image_end_row}"
 
-    image_urls = [
+    total_rows = max(13, image_end_row - image_start_row)
+    mid_row = image_start_row + total_rows // 2
+
+    top_start_cell = f"A{image_start_row}"
+    top_end_cell   = f"L{mid_row}"
+    goods_row_urls = [
+        data.get('goods_proof'),
+        data.get('container_proof'),
+        data.get('seal_proof'),
+    ]
+    goods_row_urls = [u for u in goods_row_urls if u]
+
+    bottom_start_cell = f"A{mid_row + 1}"
+    bottom_end_cell   = f"L{image_end_row}"
+    base_image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
         data.get('proof_of_delivery_image'),
     ]
-    image_urls = [url for url in image_urls if url]
-    create_collage_of_images(ws, image_urls, image_start_cell, image_end_cell, row_offset=9)
+    base_image_urls = [u for u in base_image_urls if u]
 
+    def _row_offset(urls, height_rows):
+        return 4 if len(urls) >= 3 and height_rows <= 7 else 7
+
+    if goods_row_urls:
+        create_collage_of_images(
+            ws,
+            image_urls=goods_row_urls,
+            start_cell=top_start_cell,
+            end_cell=top_end_cell,
+            row_offset=_row_offset(goods_row_urls, mid_row - image_start_row)
+        )
+
+    if base_image_urls:
+        create_collage_of_images(
+            ws,
+            image_urls=base_image_urls,
+            start_cell=bottom_start_cell,
+            end_cell=bottom_end_cell,
+            row_offset=_row_offset(base_image_urls, image_end_row - (mid_row + 1))
+        )
 
 def _handle_date_field(ws):
     """Set current date"""

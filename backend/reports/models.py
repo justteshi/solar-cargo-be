@@ -76,6 +76,27 @@ class DeliveryReport(models.Model):
         null=True,
         blank=True)
 
+    goods_proof = models.ImageField(
+        storage=PrivateMediaStorage(),
+        upload_to='proof_of_delivery/goods/',
+        null=True,
+        blank=True
+    )
+
+    container_proof = models.ImageField(
+        storage=PrivateMediaStorage(),
+        upload_to='proof_of_delivery/container/',
+        null=True,
+        blank=True
+    )
+
+    seal_proof = models.ImageField(
+        storage=PrivateMediaStorage(),
+        upload_to='proof_of_delivery/seal/',
+        null=True,
+        blank=True
+    )
+
     proof_of_delivery_image = models.ImageField(
         storage=PrivateMediaStorage(),
         upload_to='proof_of_delivery/',

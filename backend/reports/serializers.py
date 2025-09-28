@@ -88,7 +88,10 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     # Override single image fields to use custom validation
     truck_license_plate_image = CustomImageField(required=False, allow_null=True)
     trailer_license_plate_image = CustomImageField(required=False, allow_null=True)
-    proof_of_delivery_image = CustomImageField(required=True)
+    goods_proof = CustomImageField(required=False, allow_null=True)
+    container_proof = CustomImageField(required=False, allow_null=True)
+    seal_proof = CustomImageField(required=False, allow_null=True)
+    proof_of_delivery_image = CustomImageField(required=False, allow_null=True)
     cmr_image = CustomImageField(required=True)
     items_input = serializers.CharField(
         write_only=True,
@@ -214,6 +217,9 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'items_input',
             'items',  # replaced with method field showing item + quantity
             'proof_of_delivery_image',
+            'goods_proof',
+            'container_proof',
+            'seal_proof',
             # Step 3 checkboxes:
             'load_secured_status',
             'load_secured_comment',
