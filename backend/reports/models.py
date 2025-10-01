@@ -76,27 +76,6 @@ class DeliveryReport(models.Model):
         null=True,
         blank=True)
 
-    goods_proof = models.ImageField(
-        storage=PrivateMediaStorage(),
-        upload_to='proof_of_delivery/goods/',
-        null=True,
-        blank=True
-    )
-
-    container_proof = models.ImageField(
-        storage=PrivateMediaStorage(),
-        upload_to='proof_of_delivery/container/',
-        null=True,
-        blank=True
-    )
-
-    seal_proof = models.ImageField(
-        storage=PrivateMediaStorage(),
-        upload_to='proof_of_delivery/seal/',
-        null=True,
-        blank=True
-    )
-
     proof_of_delivery_image = models.ImageField(
         storage=PrivateMediaStorage(),
         upload_to='proof_of_delivery/',
@@ -196,3 +175,15 @@ class DeliveryReportItem(models.Model):
 
     def __str__(self):
         return f"{self.item.name} x {self.quantity} for report {self.delivery_report.id}"
+
+class DeliveryReportGSCProofImage(models.Model):
+    delivery_report = models.ForeignKey(
+        DeliveryReport,
+        on_delete=models.CASCADE,
+        related_name='gsc_proof_images',
+    )
+    image = models.ImageField(
+        storage=PrivateMediaStorage(),
+        upload_to='proof_of_delivery/gsc/',
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)

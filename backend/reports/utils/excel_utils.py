@@ -205,51 +205,47 @@ def _handle_items_section(ws, items, extra_rows):
 
 
 def _handle_image_sections(ws, data, extra_rows):
+    # Резервирана секция (както в шаблона): редове 28..41 + offset
     image_start_row = 28 + extra_rows
     image_end_row   = 41 + extra_rows
-    image_start_cell = f"A{image_start_row}"
-    image_end_cell   = f"L{image_end_row}"
 
-    total_rows = max(13, image_end_row - image_start_row)
-    mid_row = image_start_row + total_rows // 2
+    # Разделяме я на две хоризонтални подзони: 6 реда за горната и 8 за долната,
+    # за да има стабилен „легъл“ за двете ленти.
+    top_start_row = image_start_row
+    top_end_row   = image_start_row + 5   # 6 реда височина
+    bot_start_row = top_end_row + 1
+    bot_end_row   = image_end_row         # ~8 реда височина
 
-    top_start_cell = f"A{image_start_row}"
-    top_end_cell   = f"L{mid_row}"
-    goods_row_urls = [
-        data.get('goods_proof'),
-        data.get('container_proof'),
-        data.get('seal_proof'),
-    ]
-    goods_row_urls = [u for u in goods_row_urls if u]
+    # 1) Новото поле (1–3 снимки) – горна лента, винаги 1 ред
+    gsc_urls = (data.get('goods_seal_container_proof_urls') or [])
+    gsc_urls = [u for u in gsc_urls if u]
+    if gsc_urls:
+        insert_images_row(
+            ws,
+            image_urls=gsc_urls,
+            start_cell=f"A{top_start_row}",
+            end_cell=f"L{top_end_row}",
+            max_images=3,
+            hpad=10,
+            vpad=2,
+        )
 
-    bottom_start_cell = f"A{mid_row + 1}"
-    bottom_end_cell   = f"L{image_end_row}"
+    # 2) Старите „базови“ снимки – долна лента, пак 1 ред
     base_image_urls = [
         data.get('truck_license_plate_image'),
         data.get('trailer_license_plate_image'),
         data.get('proof_of_delivery_image'),
     ]
     base_image_urls = [u for u in base_image_urls if u]
-
-    def _row_offset(urls, height_rows):
-        return 4 if len(urls) >= 3 and height_rows <= 7 else 7
-
-    if goods_row_urls:
-        create_collage_of_images(
-            ws,
-            image_urls=goods_row_urls,
-            start_cell=top_start_cell,
-            end_cell=top_end_cell,
-            row_offset=_row_offset(goods_row_urls, mid_row - image_start_row)
-        )
-
     if base_image_urls:
-        create_collage_of_images(
+        insert_images_row(
             ws,
             image_urls=base_image_urls,
-            start_cell=bottom_start_cell,
-            end_cell=bottom_end_cell,
-            row_offset=_row_offset(base_image_urls, image_end_row - (mid_row + 1))
+            start_cell=f"A{bot_start_row}",
+            end_cell=f"L{bot_end_row}",
+            max_images=3,
+            hpad=10,
+            vpad=2,
         )
 
 def _handle_date_field(ws):
@@ -669,3 +665,73 @@ def insert_client_logo(ws, image_url, cell="I3", end_cell="L7"):
         for row in range(start_row, end_row + 1):
             cell = ws.cell(row=row, column=col)
             cell.border = Border(left=cell.border.left, right=border, top=cell.border.top, bottom=cell.border.bottom)
+
+def _cell_span_pixels(ws, start_col, end_col, start_row, end_row):
+    """Връща общата ширина/височина (в пиксели) на даден клетъчен диапазон."""
+    total_w = sum(int((ws.column_dimensions[get_column_letter(c)].width or 8.43) * 7)
+                  for c in range(start_col, end_col + 1))
+    total_h = sum(int((ws.row_dimensions[r].height or 15) * 1.33)
+                  for r in range(start_row, end_row + 1))
+    return total_w, total_h
+
+
+def _col_from_pixel_offset(ws, start_col, pixel_offset):
+    """Намира колона, в която започва даден пикселов офсет (от стартовата колона)."""
+    acc = 0
+    c = start_col
+    while True:
+        w = int((ws.column_dimensions[get_column_letter(c)].width or 8.43) * 7)
+        if acc + w > pixel_offset:
+            return c
+        acc += w
+        c += 1
+
+
+def insert_images_row(ws, image_urls, start_cell, end_cell, max_images=3, hpad=8, vpad=2):
+    if not image_urls:
+        return
+
+    image_urls = [u for u in image_urls if u][:max_images]
+
+    start_col = column_index_from_string(''.join(filter(str.isalpha, start_cell)))
+    start_row = int(''.join(filter(str.isdigit, start_cell)))
+    end_col   = column_index_from_string(''.join(filter(str.isalpha, end_cell)))
+    end_row   = int(''.join(filter(str.isdigit, end_cell)))
+
+    total_w, total_h = _cell_span_pixels(ws, start_col, end_col, start_row, end_row)
+    slots = len(image_urls)
+
+    slot_w = max(1, (total_w - (slots + 1) * hpad) // slots)
+    slot_h = max(1, total_h - 2 * vpad)
+
+    for i, url in enumerate(image_urls):
+        try:
+            raw = fetch_image_bytes(url)
+            if not raw:
+                continue
+
+            pil = PILImage.open(BytesIO(raw))
+            pil = ImageOps.exif_transpose(pil).convert("RGBA")
+            pil.thumbnail((slot_w, slot_h), PILImage.LANCZOS)  # contain
+
+            canvas = PILImage.new("RGBA", (slot_w, slot_h), (255, 255, 255, 0))
+            x = (slot_w - pil.width) // 2
+            y = (slot_h - pil.height) // 2
+            canvas.paste(pil, (x, y), pil)
+
+            buf = BytesIO()
+            canvas.save(buf, format="PNG")
+            buf.seek(0)
+
+            # Позиция на слота в пиксели от началото на диапазона
+            start_x = hpad + i * (slot_w + hpad)
+            # Превръщаме пикселовия офсет в колона за anchoring
+            anchor_col = _col_from_pixel_offset(ws, start_col, start_x)
+            anchor_cell = f"{get_column_letter(anchor_col)}{start_row}"
+
+            xl_img = XLImage(buf)
+            xl_img.anchor = anchor_cell
+            ws.add_image(xl_img)
+
+        except Exception as e:
+            logger.warning(f"insert_images_row: failed for {url}: {e}")

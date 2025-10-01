@@ -51,6 +51,9 @@ class ReportDataService:
         report_data['user'] = get_username_from_id(user_id)
         report_data['user_signature'] = get_signature_from_user_id(user_id)
 
+        gsc_urls = report_data.get("goods_seal_container_proof_urls") or []
+        report_data["goods_seal_container_proof_urls"] = [u for u in gsc_urls if u]
+
         # Get location info
         location_id = report_data.get('location')
         location_obj = Location.objects.filter(id=location_id).first()

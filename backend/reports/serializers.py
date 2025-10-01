@@ -3,7 +3,7 @@ import json
 from rest_framework import serializers
 
 from .models import DeliveryReport, Item, DeliveryReportItem, DeliveryReportImage, Location, DeliveryReportDamageImage, \
-    DeliveryReportSlipImage, Supplier
+    DeliveryReportSlipImage, Supplier, DeliveryReportGSCProofImage
 from .utils.file_validators import FileValidationError, validate_image_file
 import logging
 
@@ -88,9 +88,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
     # Override single image fields to use custom validation
     truck_license_plate_image = CustomImageField(required=False, allow_null=True)
     trailer_license_plate_image = CustomImageField(required=False, allow_null=True)
-    goods_proof = CustomImageField(required=False, allow_null=True)
-    container_proof = CustomImageField(required=False, allow_null=True)
-    seal_proof = CustomImageField(required=False, allow_null=True)
     proof_of_delivery_image = CustomImageField(required=False, allow_null=True)
     cmr_image = CustomImageField(required=True)
     items_input = serializers.CharField(
@@ -100,6 +97,15 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         default='[]',
     )
     items = serializers.SerializerMethodField(read_only=True)
+
+    goods_seal_container_proof = serializers.ListField(
+        child=serializers.ImageField(allow_empty_file=False, use_url=False),
+        min_length=1,
+        max_length=3,
+        write_only=True,
+        required=False,
+    )
+    goods_seal_container_proof_urls = serializers.SerializerMethodField()
 
     additional_images_input = OptionalImageListField(
     required=False,
@@ -217,9 +223,8 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             'items_input',
             'items',  # replaced with method field showing item + quantity
             'proof_of_delivery_image',
-            'goods_proof',
-            'container_proof',
-            'seal_proof',
+            'goods_seal_container_proof',
+            'goods_seal_container_proof_urls',
             # Step 3 checkboxes:
             'load_secured_status',
             'load_secured_comment',
@@ -251,6 +256,30 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
         # This returns a list of items with quantity
         report_items = DeliveryReportItem.objects.filter(delivery_report=obj)
         return DeliveryReportItemSerializer(report_items, many=True).data
+
+    def get_goods_seal_container_proof_urls(self, obj):
+        out = []
+        for im in obj.gsc_proof_images.all().order_by("id")[:3]:
+            try:
+                out.append(im.image.url)
+            except Exception:
+                out.append(None)
+        return out
+
+    def _save_gsc_files(self, instance, files):
+        if files is None:
+            return
+        if not (1 <= len(files) <= 3):
+            raise serializers.ValidationError({
+                "goods_seal_container_proof": "Upload between 1 and 3 images."
+            })
+        instance.gsc_proof_images.all().delete()
+        for f in files:
+            DeliveryReportGSCProofImage.objects.create(
+                delivery_report=instance,
+                image=f
+            )
+
 
     def validate_delivery_slip_images_input(self, files):
         if not files:
@@ -300,11 +329,6 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'licence_plate_trailer': "Provide either the trailer license plate number or the trailer license plate image."
             })
-        proof_of_delivery = data.get('proof_of_delivery_image')
-        if not proof_of_delivery:
-            raise serializers.ValidationError({
-                'proof_of_delivery': "Provide proof of delivery image."
-            })
 
         cmr_image = data.get('cmr_image')
         if not cmr_image:
@@ -317,6 +341,13 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'items_input': "This field is required when creating a DeliveryReport."
                 })
+
+        gsc_files = self.initial_data.getlist('goods_seal_container_proof') \
+            if hasattr(self.initial_data, 'getlist') else self.initial_data.get('goods_seal_container_proof')
+        if not gsc_files:
+            raise serializers.ValidationError({
+                'goods_seal_container_proof': "This field is required (1 to 3 images)."
+            })
 
         single_image_fields = [
             'truck_license_plate_image',
@@ -352,15 +383,17 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         raw = validated_data.pop('supplier_input').strip()
-        supplier_obj, created = Supplier.objects.get_or_create(
-            name__iexact=raw,
-            defaults={'name': raw}
-        )
+        supplier_obj = Supplier.objects.filter(name__iexact=raw).first()
+        if not supplier_obj:
+            supplier_obj = Supplier.objects.create(name=raw)
+
         location = validated_data.get('location')
         if location:
             supplier_obj.locations.add(location)
 
         validated_data['supplier_fk'] = supplier_obj
+
+        gsc_files = validated_data.pop('goods_seal_container_proof', None)
 
         items_data = validated_data.pop('items_input', [])
         additional_images_files = validated_data.pop('additional_images_input', [])
@@ -370,6 +403,8 @@ class DeliveryReportSerializer(serializers.ModelSerializer):
 
         # Create DeliveryReport without extra fields
         report = super().create(validated_data)
+
+        self._save_gsc_files(report, gsc_files)
 
         # Create related items
         for item in items_data:
