@@ -13,9 +13,14 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     labels:
       - traefik.enable=true
       - traefik.http.routers.webrouter.rule=Host(`solarcargo.commitandpray.com`)
@@ -42,6 +47,41 @@ services:
       retries: 5
     ports:
       - "5433:5432"
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: >
+      sh -c "echo 'Waiting for Redis...' && \
+             until redis-cli -h redis ping | grep -q PONG; do echo 'redis not ready, sleeping 1s'; sleep 1; done; \
+             echo 'Redis is ready'; export PYTHONPATH=/code/backend; \
+             celery -A config.celery worker --loglevel=info --concurrency=1"
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/code/backend
+    working_dir: /code/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: on-failure
+    volumes:
+      - .:/code
 
 volumes:
   postgres_data:

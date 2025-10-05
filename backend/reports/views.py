@@ -27,7 +27,6 @@ from .serializers import (
     ItemAutocompleteFilterSerializer,
     SupplierAutocompleteSerializer
 )
-from .services import ReportFileService, ReportDataService, ReportUpdateService
 from .utils.plate_recognition_utils import recognize_plate, PlateRecognitionError
 
 logger = logging.getLogger(__name__)
@@ -60,41 +59,26 @@ class DeliveryReportViewSet(viewsets.ModelViewSet):
 
         if response.status_code == 201:
             try:
+                # Enqueue background task to generate report files
                 self._handle_file_generation(response.data)
             except Exception as e:
-                logger.error(f"File generation failed: {e}")
-                return Response(
-                    {"error": "Failed to generate report files"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+                logger.error(f"Failed to enqueue file generation task: {e}")
+                # Do not block creation; return success but log the enqueue error
 
         return response
 
     def _handle_file_generation(self, report_data):
-        """Handle the complete file generation workflow"""
-        report_id = report_data.get('id')
-
-        # Initialize services
-        file_service = ReportFileService()
-        data_service = ReportDataService()
-        update_service = ReportUpdateService()
-
-        # Generate filenames and paths
-        filenames = file_service.generate_filenames()
-        excel_path = file_service.generate_excel_path(filenames['excel'])
-
-        # Prepare report data
-        prepared_data = data_service.prepare_report_data(report_data.copy())
-
-        # Generate files
-        file_service.generate_files(prepared_data, excel_path)
-
-        # Update database
-        update_service.update_report_files(
-            report_id,
-            filenames['excel'],
-            filenames['pdf']
-        )
+        """Enqueue Celery task to handle file generation."""
+        try:
+            from .tasks import generate_report_files
+            # Pass only the report id to the Celery task
+            report_id = report_data.get('id') if isinstance(report_data, dict) else None
+            if not report_id:
+                raise ValueError("Report id missing from response data")
+            generate_report_files.delay(report_id)
+        except Exception as e:
+            logger.error(f"Error enqueuing report generation task: {e}")
+            raise
 
     @extend_schema(
         tags=["Delivery Reports"],
