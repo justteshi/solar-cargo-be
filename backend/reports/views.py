@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import tempfile
+import mimetypes
 
 from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404, JsonResponse
@@ -222,6 +223,9 @@ def encode_file(file_field, filename):
         logging.error(f"Error encoding file {filename}: {e}")
         return None
 
+def guess_content_type(filename, default="image/jpeg"):
+    return mimetypes.guess_type(filename)[0] or default
+
 
 @extend_schema(
     operation_id="download_delivery_report_media_base64",
@@ -337,6 +341,18 @@ def download_report_media(request, report_id):
             }]
 
     # Multiple files
+    gsc_files = []
+    for i, img in enumerate(report.gsc_proof_images.all().order_by("id")):
+        filename = f"gsc_{i}{os.path.splitext(img.image.name)[1] or '.jpg'}"
+        encoded = encode_file(img.image, filename)
+        if encoded:
+            gsc_files.append({
+                **encoded,
+                "content_type": guess_content_type(filename)
+            })
+    if gsc_files:
+        media_data["gsc_proof"] = gsc_files
+
     slip_images = []
     for i, img in enumerate(report.slip_images.all()):
         encoded = encode_file(img.image, f"slip_{i}.jpg")
