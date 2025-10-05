@@ -1,10 +1,45 @@
 from django import forms
 from django.contrib import admin
-from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportItem, DeliveryReportDamageImage, Location, Supplier
+from .models import DeliveryReport, DeliveryReportImage, Item, DeliveryReportItem, DeliveryReportDamageImage, Location, Supplier, DeliveryReportGSCProofImage
 from django.utils.html import format_html
 from django.urls import reverse
 from django.core.exceptions import ValidationError
 from .services import ReportFileService, ReportDataService, ReportUpdateService
+from django.forms.models import BaseInlineFormSet
+
+class GSCProofInlineFormSet(BaseInlineFormSet):
+    def clean(self):
+        super().clean()
+        count = 0
+        for form in self.forms:
+            if not hasattr(form, "cleaned_data"):
+                continue
+            cd = form.cleaned_data
+            if cd.get("DELETE"):
+                continue
+            # има файл или вече съществуващ обект
+            if cd.get("image") or form.instance and form.instance.pk:
+                count += 1
+
+        if count < 1 or count > 3:
+            raise ValidationError("Моля качете между 1 и 3 снимки за Goods/Seal/Container proof.")
+
+class GSCProofInline(admin.TabularInline):
+    model = DeliveryReportGSCProofImage
+    formset = GSCProofInlineFormSet
+    extra = 0
+    fields = ("preview", "image", "uploaded_at")
+    readonly_fields = ("preview", "uploaded_at")
+    verbose_name_plural = "Goods / Seal / Container proof (1–3 снимки)"
+
+    def preview(self, obj):
+        if obj and getattr(obj, "image", None):
+            try:
+                return format_html('<img src="{}" style="max-height:100px;"/>', obj.image.url)
+            except Exception:
+                pass
+        return "-"
+
 
 class NoExtraButtonsAdmin(admin.ModelAdmin):
     def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
@@ -73,7 +108,11 @@ class DeliveryReportAdmin(NoExtraButtonsAdmin):
         js = ('admin/js/delivery_report_loader.js',)
 
     form = DeliveryReportAdminForm
-    inlines = [DeliveryReportImageInline, DeliveryReportItemInline, DeliveryReportDamageImageInline]
+    inlines = [GSCProofInline,
+       DeliveryReportImageInline,
+       DeliveryReportItemInline,
+       DeliveryReportDamageImageInline
+    ]
 
     exclude = ['supplier']
     autocomplete_fields = ['supplier_fk', 'location']
@@ -132,6 +171,48 @@ class DeliveryReportAdmin(NoExtraButtonsAdmin):
             )
         except Exception as e:
             logger.error(f"Admin file generation failed for DeliveryReport {obj.id}: {e}")
+
+    def _generate_files(self, instance):
+        try:
+            from .services import ReportFileService, ReportDataService, ReportUpdateService
+            from .serializers import DeliveryReportSerializer
+
+            file_service = ReportFileService()
+            data_service = ReportDataService()
+            update_service = ReportUpdateService()
+
+            filenames = file_service.generate_filenames()
+            excel_path = file_service.generate_excel_path(filenames['excel'])
+
+            serializer = DeliveryReportSerializer(instance)
+            prepared_data = data_service.prepare_report_data(serializer.data)
+
+            file_service.generate_files(prepared_data, excel_path)
+
+            update_service.update_report_files(
+                instance.id, filenames['excel'], filenames['pdf']
+            )
+        except Exception as e:
+            logger.error(f"Admin file generation failed for DeliveryReport {instance.id}: {e}")
+
+    def save_model(self, request, obj, form, change):
+        # запазва само родителя
+        super().save_model(request, obj, form, change)
+        # НЕ генерираме тук, защото инлайновете още не са запазени
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+
+        instance = form.instance
+
+        def do_generate():
+            self._generate_files(instance)
+
+        try:
+            transaction.on_commit(do_generate)
+        except Exception:
+            # ако няма активна транзакция
+            do_generate()
 
 
 @admin.register(Item)
